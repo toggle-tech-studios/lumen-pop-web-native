@@ -9,9 +9,7 @@ const COLORS = ['aether', 'blaze', 'nova', 'solar', 'terra'];
 export default class Game extends Scene {
     private grid: any[][] = [];
     private score: number = 0;
-    private targetScore: number = 1000;
     private moves: number = 40;
-    private level: number = 1;
     
     private scoreText!: Phaser.GameObjects.Text;
     private movesText!: Phaser.GameObjects.Text;
@@ -75,15 +73,12 @@ export default class Game extends Scene {
         const tileData = this.grid[r][c];
         const lastTile = this.chain[this.chain.length - 1];
 
-        // Ensure same color
         if (tileData.type !== lastTile.type) return;
 
-        // Ensure adjacent
         const dr = Math.abs(tileData.r - lastTile.r);
         const dc = Math.abs(tileData.c - lastTile.c);
         if (dr > 1 || dc > 1 || (dr === 0 && dc === 0)) return;
 
-        // Check if backtracking
         const prevTile = this.chain.length > 1 ? this.chain[this.chain.length - 2] : null;
         if (prevTile && prevTile === tileData) {
             lastTile.sprite.setScale(1.0);
@@ -92,7 +87,6 @@ export default class Game extends Scene {
             return;
         }
 
-        // Prevent loops
         if (this.chain.includes(tileData)) return;
 
         this.chain.push(tileData);

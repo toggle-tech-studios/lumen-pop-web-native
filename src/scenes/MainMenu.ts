@@ -29,18 +29,18 @@ export default class MainMenu extends Scene {
             fontSize: '28px',
             color: '#ffffff',
             align: 'center',
-            fontWeight: 'bold'
+            
         }).setOrigin(0.5);
 
         // Play Button
         const playBtn = this.add.rectangle(180, 400, 200, 50, 0x67e8f9, 1).setInteractive();
         playBtn.setInteractive({ useHandCursor: true });
         
-        const playText = this.add.text(180, 400, 'Begin the journey', {
+        this.add.text(180, 400, 'Begin the journey', {
             fontFamily: 'sans-serif',
             fontSize: '16px',
             color: '#291063',
-            fontWeight: 'bold'
+            
         }).setOrigin(0.5);
 
         playBtn.on('pointerdown', () => {
