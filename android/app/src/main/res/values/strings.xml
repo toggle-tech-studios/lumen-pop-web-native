@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Lumen Pop</string>
+    <string name="title_activity_main">Lumen Pop</string>
+    <string name="package_name">com.togglestudios.lumenpop</string>
+    <string name="custom_url_scheme">com.togglestudios.lumenpop</string>
+</resources>
