@@ -79,15 +79,18 @@ const writeProgress = (progress: SavedProgress) => {
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
-const levelConfig = (level: number) => ({
-  level,
-  targetScore: 5000 + (level - 1) * 1000,
-  moves: 40 + (level - 1) * 20,
-  world: level < 11 ? 'Starlight Meadows' : level < 26 ? 'Crystal Valley' : 'Twilight Grove',
-  title: level < 11 ? 'First Glow' : level < 26 ? 'Crystal Drift' : 'Moonlit Bloom',
-  lesson: level <= 2 ? 'Make an easy 3-link to wake the meadow' : level <= 5 ? 'Longer chains charge brighter rewards' : 'Find the clearest line through the glow',
-  canSpawnVortex: level >= 5,
-});
+const levelConfig = (level: number) => {
+  const biomeIndex = Math.floor((level - 1) / 10);
+  return {
+    level,
+    targetScore: Math.min(5000, 600 + biomeIndex * 600 + ((level - 1) % 10) * 200),
+    moves: Math.min(400, 20 + biomeIndex * 15 + ((level - 1) % 10) * 2),
+    world: level < 11 ? 'Starlight Meadows' : level < 26 ? 'Crystal Valley' : 'Twilight Grove',
+    title: level < 11 ? 'First Glow' : level < 26 ? 'Crystal Drift' : 'Moonlit Bloom',
+    lesson: level <= 2 ? 'Make an easy 3-link to wake the meadow' : level <= 5 ? 'Longer chains charge brighter rewards' : 'Find the clearest line through the glow',
+    canSpawnVortex: level >= 5,
+  };
+};
 
 const randomColor = () => colors[Math.floor(Math.random() * colors.length)];
 const rowOf = (index: number) => Math.floor(index / BOARD_SIZE);
@@ -153,19 +156,40 @@ const installGuaranteedLine = (board: Tile[], color: LumenColor = 'solar') => {
   }
 };
 
+const getRandomClusterLength = () => {
+  const r = Math.random();
+  return r < 0.55 ? 3 : r < 0.90 ? 4 : 5;
+};
+
 const makeBoard = (level = 1): Tile[] => {
-  let board: Tile[] = Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, id) => ({
-    id,
-    color: randomColor(),
-  }));
-  installGuaranteedLine(board, level <= 2 ? 'solar' : randomColor());
-  if (level >= 8 && Math.random() < 0.1) board[17] = { id: freshTileId(), color: 'cosmic', fusion: true };
+  const board: Tile[] = Array(36).fill(null);
+  const colorBag: LumenColor[] = [];
+  
+  for (let i = 0; i < 36; i++) {
+    if (colorBag.length === 0) {
+      const len = getRandomClusterLength();
+      const color = randomColor();
+      for (let j = 0; j < len; j++) colorBag.push(color);
+    }
+    const isFusion = level >= 3 && Math.random() < 0.085;
+    if (isFusion) {
+      board[i] = { id: freshTileId(), color: 'cosmic', fusion: true };
+    } else {
+      board[i] = { id: freshTileId(), color: colorBag.shift()! };
+    }
+  }
+
+  if (!hasPlayableChain(board)) {
+    installGuaranteedLine(board, level <= 2 ? 'solar' : randomColor());
+  }
   return board;
 };
 
 const collapseBoard = (board: (Tile | null)[], level = 1, spawnVortex = false) => {
   const next: (Tile | null)[] = Array(36).fill(null);
   const refilled: number[] = [];
+  const colorBag: LumenColor[] = [];
+  
   for (let col = 0; col < BOARD_SIZE; col += 1) {
     const survivors: Tile[] = [];
     for (let row = BOARD_SIZE - 1; row >= 0; row -= 1) {
@@ -175,15 +199,22 @@ const collapseBoard = (board: (Tile | null)[], level = 1, spawnVortex = false) =
     for (let row = BOARD_SIZE - 1, i = 0; row >= 0; row -= 1, i += 1) {
       if (survivors[i]) next[row * BOARD_SIZE + col] = survivors[i];
       else {
-        next[row * BOARD_SIZE + col] = { id: freshTileId(), color: randomColor() };
+        if (colorBag.length === 0) {
+          const len = getRandomClusterLength();
+          const color = randomColor();
+          for (let j = 0; j < len; j++) colorBag.push(color);
+        }
+        const isFusion = level >= 3 && Math.random() < 0.085;
+        if (isFusion) {
+          next[row * BOARD_SIZE + col] = { id: freshTileId(), color: 'cosmic', fusion: true };
+        } else {
+          next[row * BOARD_SIZE + col] = { id: freshTileId(), color: colorBag.shift()! };
+        }
         refilled.push(row * BOARD_SIZE + col);
       }
     }
   }
-  if (spawnVortex && level >= 5 && Math.random() < 0.72) {
-    const slot = refilled[Math.floor(Math.random() * refilled.length)];
-    if (slot !== undefined) next[slot] = { id: freshTileId(), color: 'cosmic', fusion: true };
-  }
+
   if (!hasPlayableChain(next)) {
     installGuaranteedLine(next as Tile[], level <= 2 ? 'solar' : randomColor());
   }
@@ -572,7 +603,12 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(''), 1800);
   }, []);
-  const scoreForChain = (length: number) => length === 3 ? 75 : length === 4 ? 160 : length === 5 ? 275 : 275 + (length - 5) * 110;
+  const scoreForChain = (length: number) => {
+    if (length < 3) return 0;
+    if (length === 3) return 30;
+    if (length === 4) return 55;
+    return 75 + (length - 5) * 25;
+  };
 
   const clearActiveChain = useCallback(() => {
     setSelected([]);
@@ -619,7 +655,7 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     setMoves((current) => Math.max(0, current - 1));
     showToast('Prism Vortex released · nearby energy mixed');
     clearActiveChain();
-    performRemoval(cleared, chainColor, 1350, 'vortex');
+    performRemoval(cleared, chainColor, cleared.length * 10, 'vortex');
   }, [board, clearActiveChain, performRemoval, showToast]);
 
   const finishTurn = useCallback((chain: number[]) => {
@@ -722,7 +758,7 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
       if (distance <= radius) indices.push(cell);
       return indices;
     }, []);
-    performRemoval(cleared, board[index]?.color ?? 'solar', kind === 'bomb' ? 450 : 900, 'booster');
+    performRemoval(cleared, board[index]?.color ?? 'solar', cleared.length * 10, 'booster');
     showToast(kind === 'bomb' ? 'Pulse Bomb cleared a pocket' : 'Burst Wave released');
   };
 
@@ -815,7 +851,7 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
 
   return (
     <div className="screen game-shell">
-      <div className="world-bg" style={{ backgroundImage: `url(${ASSET}${backgrounds[Math.min(backgrounds.length - 1, Math.floor((levelNumber - 1) / 2))]})`, opacity: .28 }} />
+      <div className="world-bg" style={{ backgroundImage: `url(${ASSET}${backgrounds[Math.min(backgrounds.length - 1, Math.floor((levelNumber - 1) / 10))]})`, opacity: .28 }} />
       <Topbar onBack={onBack} onSettings={onSettings} label={config.world.toUpperCase()} />
       <main className="game-content">
         <section className="level-heading"><div><h1>Level {levelNumber} <span className="text-cyan-200">·</span> {config.title}</h1><p>{activeBooster ? `Choose a cell for your ${activeBooster}` : config.lesson}</p></div><button className="pause-btn" onClick={() => { clearActiveChain(); setActiveBooster(null); setOverlay('pause'); }} aria-label="Pause game"><Pause size={18} fill="currentColor" /></button></section>
