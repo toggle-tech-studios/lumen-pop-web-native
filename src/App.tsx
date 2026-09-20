@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, memo, type PointerEvent } from 'react';
 import {
   ArrowLeft,
   ChevronRight,
@@ -408,15 +408,15 @@ function MusicLayer({ screen, enabled }: { screen: Screen; enabled: boolean }) {
 
   return (
     <>
-      <audio className="audio-track" ref={homepageRef} src={`${ASSET}${homepageMusicAsset}`} loop preload="auto" aria-hidden="true" />
-      <audio className="audio-track" ref={gameplayRef} src={`${ASSET}${gameplayMusicAsset}`} loop preload="auto" aria-hidden="true" />
+      <audio className="audio-track" ref={homepageRef} src={`${ASSET}${homepageMusicAsset}`} loop preload="none" aria-hidden="true" />
+      <audio className="audio-track" ref={gameplayRef} src={`${ASSET}${gameplayMusicAsset}`} loop preload="none" aria-hidden="true" />
     </>
   );
 }
 
 function LoadingScreen({ onDone }: { onDone: () => void }) {
   useEffect(() => {
-    const timer = window.setTimeout(onDone, 1500);
+    const timer = window.setTimeout(onDone, 500);
     return () => window.clearTimeout(timer);
   }, [onDone]);
   return (
@@ -469,7 +469,7 @@ function LevelLoadingScreen({ level, onReady }: { level: number; onReady: () => 
         onReadyRef.current();
       }
     };
-    const waitForAssets = window.setTimeout(reveal, 2400);
+    const waitForAssets = window.setTimeout(reveal, 800);
     return () => {
       cancelled = true;
       images.forEach((image) => { image.onload = null; image.onerror = null; });
@@ -611,10 +611,29 @@ function HomeScreen({ progress, onGame, onSettings, onGift }: { progress: SavedP
   );
 }
 
-function LumenTile({ tile, index, selected, popping, fresh, onPointerDown }: { tile: Tile; index: number; selected: boolean; popping: boolean; fresh?: boolean; onPointerDown: (event: import("react").PointerEvent<HTMLButtonElement>) => void }) {
+const LumenTile = memo(function LumenTile({
+  tile,
+  index,
+  selected,
+  popping,
+  fresh,
+  onPointerDown,
+}: {
+  tile: Tile;
+  index: number;
+  selected: boolean;
+  popping: boolean;
+  fresh?: boolean;
+  onPointerDown: (index: number, event: PointerEvent<HTMLButtonElement>) => void;
+}) {
   const artwork = tile.fusion ? fusionOrbAsset : lumenAssets[tile.color][selected ? 'opened' : 'closed'];
   return (
-    <button data-index={index} className={`tile ${selected ? 'selected' : ''} ${popping ? 'popping' : ''} ${fresh ? 'fresh-tile' : ''} ${tile.fusion ? 'fusion-tile' : ''}`} onPointerDown={onPointerDown} aria-label={`${tile.fusion ? 'Prism Vortex, ' : ''}${tile.color} Lumen`}>
+    <button
+      data-index={index}
+      className={`tile ${selected ? 'selected' : ''} ${popping ? 'popping' : ''} ${fresh ? 'fresh-tile' : ''} ${tile.fusion ? 'fusion-tile' : ''}`}
+      onPointerDown={(event) => onPointerDown(index, event)}
+      aria-label={`${tile.fusion ? 'Prism Vortex, ' : ''}${tile.color} Lumen`}
+    >
       <img className={tile.fusion ? 'fusion-art' : 'lumen-art'} src={`${ASSET}${artwork}`} alt="" draggable="false" />
       {tile.special === 'beam_h' && <MoveHorizontal className="absolute inset-0 m-auto text-white drop-shadow-md filter shadow-white" size={26} />}
       {tile.special === 'beam_v' && <MoveVertical className="absolute inset-0 m-auto text-white drop-shadow-md filter shadow-white" size={26} />}
@@ -622,7 +641,7 @@ function LumenTile({ tile, index, selected, popping, fresh, onPointerDown }: { t
       {tile.special === 'cross' && <Crosshair className="absolute inset-0 m-auto text-cyan-100 drop-shadow-md filter shadow-cyan-300" size={26} />}
     </button>
   );
-}
+});
 
 const trailColors: Record<LumenColor, string> = {
   solar: '#ffe56f',
@@ -1120,12 +1139,12 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     showToast('A fresh glow is ready');
   };
 
-  const onTilePointerDown = (index: number, event: PointerEvent<HTMLButtonElement>) => {
+  const onTilePointerDown = useCallback((index: number, event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     if (busyRef.current || overlay || completionSentRef.current) return;
     soundRef.current?.unlock();
     startDragAt(index);
-  };
+  }, [overlay, startDragAt]);
 
   useEffect(() => {
     if (!dragging) return;
@@ -1231,7 +1250,7 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
           }}
         >
           <div className="board">
-            {board.map((tile, index) => <LumenTile key={`${tile.id}-${index}`} tile={tile} index={index} selected={selected.includes(index)} popping={popping.includes(index)} fresh={freshTiles.includes(index)} onPointerDown={(event) => onTilePointerDown(index, event)} />)}
+            {board.map((tile, index) => <LumenTile key={tile.id} tile={tile} index={index} selected={selected.includes(index)} popping={popping.includes(index)} fresh={freshTiles.includes(index)} onPointerDown={onTilePointerDown} />)}
           </div>
           <ChainTrail selected={selected} activeType={activeType} />
           {effect && <div className="board-effect" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div>}
