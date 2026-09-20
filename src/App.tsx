@@ -22,8 +22,9 @@ import {
   Zap,
   Crosshair,
 } from 'lucide-react';
+import { UsernameScreen, ProfileDP, AuthOverlay } from './AuthComponents';
 
-type Screen = 'loading' | 'start' | 'home' | 'level-loading' | 'game' | 'settings';
+type Screen = 'loading' | 'username' | 'start' | 'home' | 'level-loading' | 'game' | 'settings';
 type LumenColor = 'solar' | 'verdant' | 'terra' | 'nova' | 'cosmic' | 'aether' | 'blaze';
 type Tile = { id: number; color: LumenColor; fusion?: boolean; special?: 'beam_h' | 'beam_v' | 'nova' | 'cross' };
 type BoosterKind = 'shuffle' | 'bomb' | 'burst';
@@ -35,6 +36,7 @@ type SavedProgress = {
   music: boolean;
   dailyGiftClaimedOn?: string;
   tutorialSeen?: boolean;
+  username?: string;
 };
 
 type LineDirection = { row: number; col: number };
@@ -577,7 +579,7 @@ function HomeScreen({ progress, onGame, onSettings, onGift }: { progress: SavedP
       <div className="world-bg" style={{ backgroundImage: `url(${ASSET}${backgrounds[Math.floor((latest - 1) / 10) % backgrounds.length]})`, opacity: 0.3 }} />
       <FloatingClouds />
       <main className="home-content" style={{ overflowY: 'auto', display: 'block', paddingBottom: '120px' }}>
-        <div className="welcome-card pb-6">
+        <div className="welcome-card pt-14 pb-6">
           <div><span className="eyebrow">THE FIRST SPARK</span><h1>Good morning,<br />stargazer.</h1><p>The Lumens are humming your name.</p></div>
           <div className="energy-pill"><span className="energy-core" /> {progress.coins.toLocaleString()}</div>
         </div>
@@ -1372,8 +1374,11 @@ function App() {
   const [showTutorial, setShowTutorial] = useState(false);
 
   const finishLoading = useCallback(() => {
-    if (!ready) { setReady(true); setScreen('start'); }
-  }, [ready]);
+    if (!ready) { 
+      setReady(true); 
+      setScreen(progress.username ? 'start' : 'username'); 
+    }
+  }, [ready, progress.username]);
   const updateProgress = (next: SavedProgress) => { setProgress(next); writeProgress(next); };
   const completeLevel = (score: number, stars: number) => {
     const existing = progress.completed[level];
@@ -1404,15 +1409,43 @@ function App() {
     updateProgress({ ...progress, tutorialSeen: true });
     setScreen('level-loading');
   };
+  const [showAuth, setShowAuth] = useState(false);
+  const handleUsernameComplete = (username: string) => {
+    updateProgress({ ...progress, username });
+    setScreen('start');
+  };
+
   const renderScreen = () => {
     if (screen === 'loading') return <LoadingScreen onDone={finishLoading} />;
+    if (screen === 'username') return <UsernameScreen onComplete={handleUsernameComplete} />;
     if (screen === 'start') return <StartScreen onStart={() => setScreen('home')} />;
     if (screen === 'settings') return <SettingsScreen progress={progress} onChange={updateProgress} onBack={() => setScreen('home')} />;
     if (screen === 'level-loading') return <LevelLoadingScreen level={level} onReady={() => setScreen('game')} />;
     if (screen === 'game') return <GameScreen key={level} levelNumber={level} progress={progress} onBack={() => setScreen('home')} onSettings={() => setScreen('settings')} onComplete={completeLevel} onCoinsChange={(coins) => updateProgress({ ...progress, coins })} onNextLevel={() => openLevel(level + 1)} />;
     return <HomeScreen progress={progress} onGame={openLevel} onSettings={() => setScreen('settings')} onGift={claimDailyGift} />;
   };
-  return <><MusicLayer screen={screen} enabled={progress.music} />{renderScreen()}{showTutorial && <TutorialCarousel onComplete={finishTutorial} />}</>;
+  
+  const showProfile = screen === 'home';
+  
+  return (
+    <>
+      <MusicLayer screen={screen} enabled={progress.music} />
+      {showProfile && progress.username && (
+        <ProfileDP onClick={() => setShowAuth(true)} username={progress.username} />
+      )}
+      {renderScreen()}
+      {showTutorial && <TutorialCarousel onComplete={finishTutorial} />}
+      {showAuth && progress.username && (
+        <AuthOverlay 
+          onClose={() => setShowAuth(false)} 
+          username={progress.username} 
+          coins={progress.coins}
+          highestLevel={progress.highestUnlocked}
+          totalStars={Object.values(progress.completed).reduce((sum, item) => sum + item.stars, 0)}
+        />
+      )}
+    </>
+  );
 }
 
 export default App;
