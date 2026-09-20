@@ -34,7 +34,9 @@ type SavedProgress = {
   sound: boolean;
   music: boolean;
   dailyGiftClaimedOn?: string;
+  tutorialSeen?: boolean;
 };
+
 type LineDirection = { row: number; col: number };
 
 const ASSET = './assets/';
@@ -63,6 +65,7 @@ const defaultProgress: SavedProgress = {
   coins: 1000,
   sound: true,
   music: true,
+  tutorialSeen: false,
 };
 
 let nextTileId = 100;
@@ -1281,11 +1284,96 @@ function SettingsScreen({ progress, onChange, onBack }: { progress: SavedProgres
   return <div className="screen game-shell"><Topbar onBack={onBack} label="YOUR POCKET" /><main className="settings"><p className="eyebrow">A small constellation of controls</p><h1>Settings</h1><p>Make the meadow feel like yours.</p><div className="setting-group"><div className="setting-row"><span className="setting-icon">{progress.sound ? <Volume2 size={17} /> : <VolumeX size={17} />}</span><div className="setting-copy"><b>Sound effects</b><span>Every pop, sparkle, and tiny wake-up</span></div><button className={`switch ${progress.sound ? 'on' : ''}`} onClick={() => onChange({ ...progress, sound: !progress.sound })} aria-label="Toggle sound"><i /></button></div><div className="setting-row"><span className="setting-icon"><Music2 size={17} /></span><div className="setting-copy"><b>Meadow music</b><span>Soft loops for longer journeys</span></div><button className={`switch ${progress.music ? 'on' : ''}`} onClick={() => onChange({ ...progress, music: !progress.music })} aria-label="Toggle music"><i /></button></div></div><div className="setting-group"><button className="setting-row setting-button" onClick={() => setInfo(info === 'how' ? null : 'how')}><span className="setting-icon"><CircleHelp size={17} /></span><span className="setting-copy"><b>How to play</b><span>Link one straight line in any direction</span></span><ChevronRight size={17} className="text-white/50" /></button><button className="setting-row setting-button" onClick={() => setInfo(info === 'about' ? null : 'about')}><span className="setting-icon"><Gem size={17} /></span><span className="setting-copy"><b>About Lumen Pop</b><span>Made for curious thumbs and bright minds</span></span><ChevronRight size={17} className="text-white/50" /></button></div>{info === 'how' && <div className="info-panel"><b>How to play</b><span>Press and drag through 3 or more matching Lumens in a single horizontal, vertical, or diagonal line. Release to pop them, then watch gravity refill the board.</span></div>}{info === 'about' && <div className="info-panel"><b>About Lumen Pop</b><span>A tiny constellation game about waking friendly Lumens, building bright chains, and finding a little wonder in every move.</span></div>}<button className="btn-soft mt-4 flex items-center gap-2" onClick={onBack}><Home size={16} /> Return to meadow</button></main></div>;
 }
 
+function TutorialCarousel({ onComplete }: { onComplete: () => void }) {
+  const [slide, setSlide] = useState(0);
+
+  const cards = [
+    {
+      title: "How to Play",
+      description: "Drag to link at least 3 Lumens horizontally, vertically, or diagonally.",
+      image: "solar_opened.png"
+    },
+    {
+      title: "4-Link: Beam Blast",
+      description: "Match 4 Lumens to release a Beam Blast that clears an entire row or column.",
+      image: "nova_opened.png"
+    },
+    {
+      title: "5-Link: Nova Bomb",
+      description: "Match 5 Lumens to forge a Nova Bomb that blasts a 3x3 pocket of the board.",
+      image: "blaze_opened.png"
+    },
+    {
+      title: "6-Link: Cross Blast",
+      description: "Match 6 Lumens to unleash a Cross Blast, clearing both a row and a column.",
+      image: "verdant_opened.png"
+    },
+    {
+      title: "7+ Link: Vortex",
+      description: "Match 7 or more Lumens to summon a Vortex. It sweeps away all Lumens of that color!",
+      image: "aether_opened.png"
+    },
+    {
+      title: "Prism Vortex",
+      description: "A rare Prism Vortex has a 5% chance to spawn! Tap it to absorb all nearby Lumens.",
+      image: "fusion_orb.png"
+    },
+    {
+      title: "Target Glow",
+      description: "Reach the target glow score before running out of moves to win the level.",
+      image: "terra_opened.png"
+    }
+  ];
+
+  const handleNext = () => {
+    if (slide < cards.length - 1) {
+      setSlide(slide + 1);
+    } else {
+      onComplete();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-md" style={{ animation: 'appear 0.3s ease both' }}>
+      <div className="relative w-full max-w-[340px] overflow-hidden rounded-[2rem] border border-white/20 bg-[#12053c] p-8 shadow-2xl shadow-cyan-900/40">
+        <div className="absolute inset-0 bg-gradient-to-b from-cyan-900/30 to-transparent" />
+        
+        <div className="relative flex flex-col items-center text-center" key={slide} style={{ animation: 'appear 0.35s ease both' }}>
+           <img 
+             src={`${ASSET}${cards[slide].image}`} 
+             alt={cards[slide].title} 
+             className="mb-8 h-36 w-36 object-contain drop-shadow-[0_0_24px_rgba(0,240,255,0.4)] sparkle"
+             draggable="false"
+           />
+           <h2 className="display mb-3 text-2xl font-bold tracking-tight text-white">{cards[slide].title}</h2>
+           <p className="mb-8 text-[13px] leading-relaxed text-white/70 h-[60px]">{cards[slide].description}</p>
+           
+           <div className="flex w-full items-center justify-between mt-2">
+             <div className="flex gap-2">
+               {cards.map((_, i) => (
+                 <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === slide ? 'w-5 bg-cyan-300 shadow-[0_0_8px_#00f0ff]' : 'w-1.5 bg-white/20'}`} />
+               ))}
+             </div>
+             <button 
+               className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm shadow-[0_0_15px_rgba(255,187,66,0.3)]"
+               onClick={handleNext}
+             >
+               {slide < cards.length - 1 ? 'Next' : 'Play'} <ChevronRight size={16} />
+             </button>
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [screen, setScreen] = useState<Screen>('loading');
   const [ready, setReady] = useState(false);
   const [progress, setProgress] = useState<SavedProgress>(() => readProgress());
   const [level, setLevel] = useState(1);
+  const [showTutorial, setShowTutorial] = useState(false);
+
   const finishLoading = useCallback(() => {
     if (!ready) { setReady(true); setScreen('start'); }
   }, [ready]);
@@ -1308,6 +1396,15 @@ function App() {
   const openLevel = (nextLevel?: number) => {
     const destination = nextLevel ?? progress.highestUnlocked;
     setLevel(destination);
+    if (destination === 1 && !progress.tutorialSeen) {
+      setShowTutorial(true);
+    } else {
+      setScreen('level-loading');
+    }
+  };
+  const finishTutorial = () => {
+    setShowTutorial(false);
+    updateProgress({ ...progress, tutorialSeen: true });
     setScreen('level-loading');
   };
   const renderScreen = () => {
@@ -1318,7 +1415,7 @@ function App() {
     if (screen === 'game') return <GameScreen key={level} levelNumber={level} progress={progress} onBack={() => setScreen('home')} onSettings={() => setScreen('settings')} onComplete={completeLevel} onCoinsChange={(coins) => updateProgress({ ...progress, coins })} onNextLevel={() => openLevel(level + 1)} />;
     return <HomeScreen progress={progress} onGame={openLevel} onSettings={() => setScreen('settings')} onGift={claimDailyGift} />;
   };
-  return <><MusicLayer screen={screen} enabled={progress.music} />{renderScreen()}</>;
+  return <><MusicLayer screen={screen} enabled={progress.music} />{renderScreen()}{showTutorial && <TutorialCarousel onComplete={finishTutorial} />}</>;
 }
 
 export default App;
