@@ -235,7 +235,7 @@ button:focus-visible { outline: 3px solid #ffe36e; outline-offset: 3px; }
 .guide-line { width:14px; height:1px; background:rgba(255,255,255,.25); }
 .board-wrap { position:relative; padding:10px; border-radius:26px; background:linear-gradient(145deg,rgba(255,255,255,.25),rgba(255,255,255,.07)); border:1px solid rgba(255,255,255,.25); box-shadow:0 22px 50px rgba(5,0,26,.4), inset 0 1px rgba(255,255,255,.24); touch-action:none; margin: 0 auto; max-width: min(100%, calc(100vh - 310px)); width: 100%; }
 .board-wrap::before { content:""; position:absolute; inset:4px; border-radius:22px; background:rgba(11,3,48,.62); }
-.board { position:relative; z-index:1; display:grid; grid-template-columns:repeat(6,1fr); gap:7px; }
+.board { position:relative; z-index:1; display:grid; grid-template-columns:repeat(7,1fr); gap:7px; }
 .tile { aspect-ratio:1; border:0; cursor:pointer; padding:0; background:rgba(255,255,255,.055); border-radius:14px; position:relative; transition:transform .16s, filter .16s; touch-action:none; -webkit-user-select:none; user-select:none; }
 .tile:hover, .tile.selected { transform:scale(1.07); filter:brightness(1.22); z-index:2; }
 .tile.selected { animation:linked-pulse .7s ease-in-out infinite alternate; }

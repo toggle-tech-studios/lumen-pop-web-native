@@ -17,11 +17,15 @@ import {
   Star,
   Volume2,
   VolumeX,
+  MoveHorizontal,
+  MoveVertical,
+  Zap,
+  Crosshair,
 } from 'lucide-react';
 
 type Screen = 'loading' | 'start' | 'home' | 'level-loading' | 'game' | 'settings';
 type LumenColor = 'solar' | 'verdant' | 'terra' | 'nova' | 'cosmic' | 'aether' | 'blaze';
-type Tile = { id: number; color: LumenColor; fusion?: boolean };
+type Tile = { id: number; color: LumenColor; fusion?: boolean; special?: 'beam_h' | 'beam_v' | 'nova' | 'cross' };
 type BoosterKind = 'shuffle' | 'bomb' | 'burst';
 type SavedProgress = {
   highestUnlocked: number;
@@ -34,7 +38,7 @@ type SavedProgress = {
 type LineDirection = { row: number; col: number };
 
 const ASSET = './assets/';
-const BOARD_SIZE = 6;
+const BOARD_SIZE = 7;
 const colors: LumenColor[] = ['solar', 'verdant', 'terra', 'nova', 'cosmic', 'aether', 'blaze'];
 const lumenAssets: Record<LumenColor, { opened: string; closed: string }> = {
   solar: { opened: 'solar_opened.png', closed: 'solar_closed.png' },
@@ -83,12 +87,12 @@ const levelConfig = (level: number) => {
   const biomeIndex = Math.floor((level - 1) / 10);
   return {
     level,
-    targetScore: Math.min(5000, 600 + biomeIndex * 600 + ((level - 1) % 10) * 200),
-    moves: Math.min(400, 20 + biomeIndex * 15 + ((level - 1) % 10) * 2),
+    targetScore: Math.min(7500, 800 + biomeIndex * 800 + ((level - 1) % 10) * 250),
+    moves: Math.min(350, 18 + biomeIndex * 12 + ((level - 1) % 10) * 2),
     world: level < 11 ? 'Starlight Meadows' : level < 26 ? 'Crystal Valley' : 'Twilight Grove',
     title: level < 11 ? 'First Glow' : level < 26 ? 'Crystal Drift' : 'Moonlit Bloom',
     lesson: level <= 2 ? 'Make an easy 3-link to wake the meadow' : level <= 5 ? 'Longer chains charge brighter rewards' : 'Find the clearest line through the glow',
-    canSpawnVortex: level >= 5,
+    canSpawnVortex: true,
   };
 };
 
@@ -132,41 +136,34 @@ const hasPlayableChain = (board: (Tile | null)[]) => {
 };
 
 const installGuaranteedLine = (board: Tile[], color: LumenColor = 'solar') => {
-  const directions = [
-    { row: 0, col: 1 },
-    { row: 1, col: 0 },
-    { row: 1, col: 1 },
-    { row: 1, col: -1 },
-  ];
-  const direction = directions[Math.floor(Math.random() * directions.length)];
-  const starts: number[] = [];
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
-      const endRow = row + direction.row * 2;
-      const endCol = col + direction.col * 2;
-      if (endRow >= 0 && endRow < BOARD_SIZE && endCol >= 0 && endCol < BOARD_SIZE) starts.push(row * BOARD_SIZE + col);
+  const isRow = Math.random() < 0.5;
+  if (isRow) {
+    const row = Math.floor(Math.random() * BOARD_SIZE);
+    const colStart = Math.floor(Math.random() * (BOARD_SIZE - 2));
+    for (let i = 0; i < 3; i++) {
+      const index = row * BOARD_SIZE + colStart + i;
+      if (board[index] && !board[index].fusion) board[index].color = color;
     }
-  }
-  const start = starts[Math.floor(Math.random() * starts.length)] ?? 0;
-  const startRow = rowOf(start);
-  const startCol = colOf(start);
-  for (let step = 0; step < 3; step += 1) {
-    const index = (startRow + direction.row * step) * BOARD_SIZE + startCol + direction.col * step;
-    if (board[index] && !board[index].fusion) board[index].color = color;
+  } else {
+    const col = Math.floor(Math.random() * BOARD_SIZE);
+    const rowStart = Math.floor(Math.random() * (BOARD_SIZE - 2));
+    for (let i = 0; i < 3; i++) {
+      const index = (rowStart + i) * BOARD_SIZE + col;
+      if (board[index] && !board[index].fusion) board[index].color = color;
+    }
   }
 };
 
 const getRandomClusterLength = () => {
-  const r = Math.random();
-  return r < 0.75 ? 3 : r < 0.97 ? 4 : 5;
+  return Math.random() < 0.85 ? 3 : 4;
 };
 
 const makeBoard = (level = 1): Tile[] => {
-  const board: Tile[] = Array(36).fill(null);
+  const board: Tile[] = Array(BOARD_SIZE * BOARD_SIZE).fill(null);
   const colorBag: LumenColor[] = [];
   let vortexSpawned = false;
   
-  for (let i = 0; i < 36; i++) {
+  for (let i = 0; i < BOARD_SIZE * BOARD_SIZE; i++) {
     if (colorBag.length === 0) {
       const len = getRandomClusterLength();
       const color = randomColor();
@@ -187,8 +184,8 @@ const makeBoard = (level = 1): Tile[] => {
   return board;
 };
 
-const collapseBoard = (board: (Tile | null)[], level = 1, spawnVortex = false) => {
-  const next: (Tile | null)[] = Array(36).fill(null);
+const collapseBoard = (board: (Tile | null)[], level = 1) => {
+  const next: (Tile | null)[] = Array(BOARD_SIZE * BOARD_SIZE).fill(null);
   const refilled: number[] = [];
   const colorBag: LumenColor[] = [];
   let vortexSpawned = false;
@@ -524,11 +521,15 @@ function HomeScreen({ progress, onGame, onSettings, onGift }: { progress: SavedP
   );
 }
 
-function LumenTile({ tile, index, selected, popping, fresh, onPointerDown }: { tile: Tile; index: number; selected: boolean; popping: boolean; fresh?: boolean; onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void }) {
+function LumenTile({ tile, index, selected, popping, fresh, onPointerDown }: { tile: Tile; index: number; selected: boolean; popping: boolean; fresh?: boolean; onPointerDown: (event: import("react").PointerEvent<HTMLButtonElement>) => void }) {
   const artwork = tile.fusion ? fusionOrbAsset : lumenAssets[tile.color][selected ? 'opened' : 'closed'];
   return (
     <button data-index={index} className={`tile ${selected ? 'selected' : ''} ${popping ? 'popping' : ''} ${fresh ? 'fresh-tile' : ''} ${tile.fusion ? 'fusion-tile' : ''}`} onPointerDown={onPointerDown} aria-label={`${tile.fusion ? 'Prism Vortex, ' : ''}${tile.color} Lumen`}>
       <img className={tile.fusion ? 'fusion-art' : 'lumen-art'} src={`${ASSET}${artwork}`} alt="" draggable="false" />
+      {tile.special === 'beam_h' && <MoveHorizontal className="absolute inset-0 m-auto text-white drop-shadow-md filter shadow-white" size={26} />}
+      {tile.special === 'beam_v' && <MoveVertical className="absolute inset-0 m-auto text-white drop-shadow-md filter shadow-white" size={26} />}
+      {tile.special === 'nova' && <Zap className="absolute inset-0 m-auto text-yellow-100 drop-shadow-md filter shadow-yellow-200" size={26} fill="currentColor" />}
+      {tile.special === 'cross' && <Crosshair className="absolute inset-0 m-auto text-cyan-100 drop-shadow-md filter shadow-cyan-300" size={26} />}
     </button>
   );
 }
@@ -613,7 +614,9 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     if (length < 3) return 0;
     if (length === 3) return 30;
     if (length === 4) return 55;
-    return 75 + (length - 5) * 25;
+    if (length === 5) return 85;
+    if (length === 6) return 120;
+    return 120 + (length - 6) * 35;
   };
 
   const clearActiveChain = useCallback(() => {
@@ -624,7 +627,210 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     setActiveType(null);
   }, []);
 
-  const performRemoval = useCallback((indices: number[], chainColor: LumenColor, bonus = 0, mode: 'pop' | 'vortex' | 'booster' = 'pop', spawnVortex = false) => {
+  const findAutoMatches = (boardState: (Tile | null)[]) => {
+    const matchGroups: number[][] = [];
+    const matched = new Set<number>();
+    
+    for (let row = 0; row < BOARD_SIZE; row++) {
+      for (let col = 0; col < BOARD_SIZE - 2; col++) {
+        const i = row * BOARD_SIZE + col;
+        if (!boardState[i] || boardState[i]?.fusion || boardState[i]?.special) continue;
+        const color = boardState[i]!.color;
+        let len = 1;
+        while (col + len < BOARD_SIZE && boardState[i + len]?.color === color && !boardState[i + len]?.fusion && !boardState[i + len]?.special) len++;
+        if (len >= 3) {
+          const group = [];
+          for (let j = 0; j < len; j++) { group.push(i + j); matched.add(i + j); }
+          matchGroups.push(group);
+          col += len - 1;
+        }
+      }
+    }
+    
+    for (let col = 0; col < BOARD_SIZE; col++) {
+      for (let row = 0; row < BOARD_SIZE - 2; row++) {
+        const i = row * BOARD_SIZE + col;
+        if (!boardState[i] || boardState[i]?.fusion || boardState[i]?.special) continue;
+        const color = boardState[i]!.color;
+        let len = 1;
+        while (row + len < BOARD_SIZE && boardState[i + len * BOARD_SIZE]?.color === color && !boardState[i + len * BOARD_SIZE]?.fusion && !boardState[i + len * BOARD_SIZE]?.special) len++;
+        if (len >= 3) {
+          const group = [];
+          for (let j = 0; j < len; j++) { group.push(i + j * BOARD_SIZE); matched.add(i + j * BOARD_SIZE); }
+          matchGroups.push(group);
+          row += len - 1;
+        }
+      }
+    }
+    
+    return { unique: Array.from(matched), groups: matchGroups };
+  };
+
+  const surgeTickRef = useRef(false);
+
+  const startLumenSurge = useCallback((currentBoard: Tile[], scoreAcc: number) => {
+    if (moves <= 0) {
+      if (!completionSentRef.current) {
+        completionSentRef.current = true;
+        window.setTimeout(() => {
+          play('win');
+          setOverlay('complete');
+          onComplete(score + scoreAcc, starsForScore(score + scoreAcc));
+        }, 760);
+      }
+      return;
+    }
+    
+    setMoves(m => m - 1);
+    
+    const normalIndices: number[] = [];
+    for (let i = 0; i < BOARD_SIZE * BOARD_SIZE; i++) {
+      if (currentBoard[i] && !currentBoard[i]?.fusion && !currentBoard[i]?.special) {
+        normalIndices.push(i);
+      }
+    }
+    
+    if (normalIndices.length === 0) {
+      setScore(s => s + 50);
+      window.setTimeout(() => startLumenSurge(currentBoard, scoreAcc + 50), 300);
+      return;
+    }
+    
+    const target = normalIndices[Math.floor(Math.random() * normalIndices.length)];
+    const special = Math.random() > 0.5 ? 'nova' : (Math.random() > 0.5 ? 'beam_h' : 'beam_v');
+    
+    const newBoard = [...currentBoard];
+    newBoard[target] = { ...newBoard[target], special, id: freshTileId() } as Tile;
+    setBoard(newBoard);
+    play('wake'); 
+    
+    window.setTimeout(() => {
+      activateVortex(target, newBoard[target].color, true, newBoard, scoreAcc);
+    }, 400);
+    
+  }, [moves, score, onComplete, play, starsForScore]);
+
+  const scheduleCascade = useCallback((boardState: Tile[], scoreAcc: number, multiplier: number, isSurge = false) => {
+    const { unique, groups } = findAutoMatches(boardState);
+    if (unique.length === 0) {
+      setBoard(boardState);
+      setScore(current => current + scoreAcc);
+      window.setTimeout(() => { busyRef.current = false; }, 100);
+      
+      if (isSurge || (score + scoreAcc >= config.targetScore && moves > 0)) {
+         surgeTickRef.current = true;
+         startLumenSurge(boardState, 0);
+      } else if (!isSurge && score + scoreAcc >= config.targetScore && moves <= 0 && !completionSentRef.current) {
+         completionSentRef.current = true;
+         window.setTimeout(() => {
+           play('win');
+           setOverlay('complete');
+           onComplete(score + scoreAcc, starsForScore(score + scoreAcc));
+         }, 760);
+      } else if (!isSurge && score + scoreAcc < config.targetScore && moves <= 0) {
+         window.setTimeout(() => {
+           play('lose');
+           setOverlay('fail');
+         }, 820);
+      }
+      return;
+    }
+    
+    setPopping(unique);
+    setBoard(boardState);
+    play('pop', 2);
+    
+    let cascadeScore = 0;
+    groups.forEach((g: number[]) => { cascadeScore += scoreForChain(g.length) * multiplier; });
+
+    window.setTimeout(() => {
+      const cleared = boardState.map((t, i) => unique.includes(i) ? null : t);
+      const result = collapseBoard(cleared, levelNumber);
+      setBoard(result.board);
+      setFreshTiles(result.refilled);
+      setPopping([]);
+      play('gravity', 1);
+      
+      window.setTimeout(() => {
+        scheduleCascade(result.board, scoreAcc + cascadeScore, multiplier === 1.5 ? 2.0 : 3.0, isSurge);
+      }, 350);
+    }, 400);
+  }, [levelNumber, play, scoreForChain, score, config.targetScore, moves, startLumenSurge, onComplete, starsForScore]);
+
+  const activateVortex = useCallback((index: number, chainColor: LumenColor, isSurge = false, currentBoard = board, scoreAcc = 0) => {
+    if (busyRef.current && !isSurge) return;
+    busyRef.current = true;
+    
+    const tile = currentBoard[index];
+    if (!tile) {
+      scheduleCascade(currentBoard as Tile[], scoreAcc, 1.5, isSurge);
+      return;
+    }
+    
+    const centerRow = rowOf(index);
+    const centerCol = colOf(index);
+    const cleared = new Set<number>();
+    cleared.add(index);
+    
+    if (tile.fusion) {
+      currentBoard.forEach((t, cell) => {
+        if (!t) return;
+        const distance = Math.hypot(rowOf(cell) - centerRow, colOf(cell) - centerCol);
+        if (distance <= 2.25 || (distance <= 3.1 && t.color === chainColor)) cleared.add(cell);
+      });
+    } else if (tile.special === 'nova') {
+      currentBoard.forEach((t, cell) => {
+        if (!t) return;
+        if (Math.abs(rowOf(cell) - centerRow) <= 1 && Math.abs(colOf(cell) - centerCol) <= 1) cleared.add(cell);
+      });
+    } else if (tile.special === 'beam_h') {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (currentBoard[centerRow * BOARD_SIZE + c]) cleared.add(centerRow * BOARD_SIZE + c);
+      }
+    } else if (tile.special === 'beam_v') {
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        if (currentBoard[r * BOARD_SIZE + centerCol]) cleared.add(r * BOARD_SIZE + centerCol);
+      }
+    } else if (tile.special === 'cross') {
+      for (let c = 0; c < BOARD_SIZE; c++) if (currentBoard[centerRow * BOARD_SIZE + c]) cleared.add(centerRow * BOARD_SIZE + c);
+      for (let r = 0; r < BOARD_SIZE; r++) if (currentBoard[r * BOARD_SIZE + centerCol]) cleared.add(r * BOARD_SIZE + centerCol);
+    }
+    
+    const uniqueIndices = Array.from(cleared);
+    
+    if (!isSurge) {
+      setMoves((current) => Math.max(0, current - 1));
+      showToast('Special released · energy mixed');
+      clearActiveChain();
+    }
+    
+    setPopping(uniqueIndices);
+    setEffect('vortex');
+    play('special', Math.min(3, uniqueIndices.length / 3));
+    
+    if (effectTimerRef.current) window.clearTimeout(effectTimerRef.current);
+    effectTimerRef.current = window.setTimeout(() => setEffect(null), 720);
+    
+    window.setTimeout(() => {
+      setBoard((current) => {
+        const afterClear = current.map((t, i) => uniqueIndices.includes(i) ? null : t);
+        const result = collapseBoard(afterClear, levelNumber);
+        setFreshTiles(result.refilled);
+        if (freshTimerRef.current) window.clearTimeout(freshTimerRef.current);
+        freshTimerRef.current = window.setTimeout(() => setFreshTiles([]), 720);
+        play('gravity', Math.min(2, result.refilled.length / 5));
+        
+        window.setTimeout(() => {
+          scheduleCascade(result.board, scoreAcc + uniqueIndices.length * 10, 1.5, isSurge);
+        }, 400);
+        
+        return result.board;
+      });
+      setPopping([]);
+    }, 460);
+  }, [board, clearActiveChain, showToast, play, scheduleCascade, levelNumber]);
+
+  const performRemoval = useCallback((indices: number[], chainColor: LumenColor, bonus = 0, mode: 'pop' | 'vortex' | 'booster' = 'pop', specialToInject?: { index: number, special?: Tile['special'], fusion?: boolean }) => {
     if (busyRef.current) return;
     busyRef.current = true;
     const uniqueIndices = [...new Set(indices)];
@@ -633,40 +839,37 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     play(mode === 'vortex' ? 'special' : mode === 'booster' ? 'booster' : 'pop', Math.min(3, uniqueIndices.length / 3));
     if (effectTimerRef.current) window.clearTimeout(effectTimerRef.current);
     effectTimerRef.current = window.setTimeout(() => setEffect(null), mode === 'vortex' ? 720 : 460);
+    
     window.setTimeout(() => {
       setBoard((current) => {
         const cleared = current.map((tile, index) => uniqueIndices.includes(index) ? null : tile);
-        const result = collapseBoard(cleared, levelNumber, spawnVortex);
+        if (specialToInject) {
+          cleared[specialToInject.index] = { 
+            id: freshTileId(), 
+            color: specialToInject.fusion ? 'cosmic' : chainColor, 
+            special: specialToInject.special,
+            fusion: specialToInject.fusion 
+          };
+        }
+        const result = collapseBoard(cleared, levelNumber);
         setFreshTiles(result.refilled);
         if (freshTimerRef.current) window.clearTimeout(freshTimerRef.current);
         freshTimerRef.current = window.setTimeout(() => setFreshTiles([]), 720);
         play('gravity', Math.min(2, result.refilled.length / 5));
+        
+        window.setTimeout(() => {
+          scheduleCascade(result.board, bonus, 1.5);
+        }, 400);
+        
         return result.board;
       });
       setPopping([]);
-      setScore((current) => current + bonus);
-      window.setTimeout(() => { busyRef.current = false; }, 270);
     }, mode === 'vortex' ? 460 : 300);
-  }, [levelNumber, play]);
-
-  const activateVortex = useCallback((index: number, chainColor: LumenColor) => {
-    if (busyRef.current) return;
-    const centerRow = rowOf(index);
-    const centerCol = colOf(index);
-    const cleared = board.reduce<number[]>((indices, tile, cell) => {
-      const distance = Math.hypot(rowOf(cell) - centerRow, colOf(cell) - centerCol);
-      if (distance <= 2.25 || (distance <= 3.1 && tile.color === chainColor)) indices.push(cell);
-      return indices;
-    }, []);
-    setMoves((current) => Math.max(0, current - 1));
-    showToast('Prism Vortex released · nearby energy mixed');
-    clearActiveChain();
-    performRemoval(cleared, chainColor, cleared.length * 10, 'vortex');
-  }, [board, clearActiveChain, performRemoval, showToast]);
+  }, [levelNumber, play, scheduleCascade]);
 
   const finishTurn = useCallback((chain: number[]) => {
     if (busyRef.current) return;
-    const specialIndex = chain.find((index) => board[index]?.fusion);
+    const specialIndex = chain.find((index) => board[index]?.fusion || board[index]?.special);
     if (specialIndex !== undefined) {
       activateVortex(specialIndex, board[specialIndex]?.color ?? 'cosmic');
       return;
@@ -678,38 +881,33 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
       return;
     }
     const chainColor = board[chain[0]].color;
-    const extra: number[] = [];
-    if (chain.length >= 6) {
-      const center = chain[Math.floor(chain.length / 2)];
-      const centerRow = rowOf(center);
-      const centerCol = colOf(center);
-      board.forEach((tile, index) => {
-        if (!chain.includes(index) && Math.max(Math.abs(rowOf(index) - centerRow), Math.abs(colOf(index) - centerCol)) <= 1 && tile.color === chainColor) extra.push(index);
-      });
+    let specialToInject: { index: number, special?: Tile['special'], fusion?: boolean } | undefined = undefined;
+    
+    if (chain.length >= 7) {
+      specialToInject = { index: chain[chain.length - 1], fusion: true };
+    } else if (chain.length === 6) {
+      specialToInject = { index: chain[chain.length - 1], special: 'cross' };
+    } else if (chain.length === 5) {
+      specialToInject = { index: chain[chain.length - 1], special: 'nova' };
+    } else if (chain.length === 4) {
+      specialToInject = { index: chain[chain.length - 1], special: Math.random() > 0.5 ? 'beam_h' : 'beam_v' };
     }
+
     const gained = scoreForChain(chain.length);
-    const nextScore = score + gained;
     setMoves((current) => Math.max(0, current - 1));
-    if (chain.length >= 6) showToast(`${chain.length}-Lumen surge · cross-pulse cleared`);
-    else if (chain.length === 5) showToast('Five-link charge · a Prism Vortex may appear');
-    else if (chain.length === 4) showToast('Four-link glow · brighter reward');
+    
+    if (chain.length >= 7) showToast(`7-Lumen surge · Prism Vortex created!`);
+    else if (chain.length === 6) showToast('6-link · Cross Beam created!');
+    else if (chain.length === 5) showToast('5-link · Nova Bomb created!');
+    else if (chain.length === 4) showToast('4-link · Beam Lumen created!');
+    
     play('link', Math.min(3, chain.length / 2));
-    performRemoval([...chain, ...extra], chainColor, gained, 'pop', config.canSpawnVortex && chain.length >= 5);
+    performRemoval([...chain], chainColor, gained, 'pop', specialToInject);
     clearActiveChain();
-    if (nextScore >= config.targetScore && !completionSentRef.current) {
-      completionSentRef.current = true;
-      window.setTimeout(() => {
-        play('win');
-        setOverlay('complete');
-        onComplete(nextScore, starsForScore(nextScore));
-      }, 760);
-    } else if (moves <= 1) {
-      window.setTimeout(() => {
-        play('lose');
-        setOverlay('fail');
-      }, 820);
-    }
-  }, [activateVortex, board, clearActiveChain, config.canSpawnVortex, config.targetScore, moves, onComplete, play, score, showToast]);
+  }, [activateVortex, board, clearActiveChain, moves, play, scoreForChain, showToast, performRemoval]);
+
+
+
 
   const addToChain = useCallback((index: number) => {
     if (busyRef.current || activeBooster) return;
@@ -866,12 +1064,19 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
       <Topbar onBack={onBack} onSettings={onSettings} label={config.world.toUpperCase()} />
       <main className="game-content">
         <section className="level-heading"><div><h1>Level {levelNumber} <span className="text-cyan-200">·</span> {config.title}</h1><p>{activeBooster ? `Choose a cell for your ${activeBooster}` : config.lesson}</p></div><button className="pause-btn" onClick={() => { clearActiveChain(); setActiveBooster(null); setOverlay('pause'); }} aria-label="Pause game"><Pause size={18} fill="currentColor" /></button></section>
-        <section className="stats-row">
-          <div className="stat-box"><div className="stat-label">Target score</div><div className="stat-value">{config.targetScore.toLocaleString()}</div><div className="progress-track milestone-track"><i style={{ width: `${progressPercent}%` }} /><span className={stars >= 1 ? 'milestone on' : 'milestone'} style={{ left: '33%' }}>★</span><span className={stars >= 2 ? 'milestone on' : 'milestone'} style={{ left: '66%' }}>★</span><span className={stars >= 3 ? 'milestone on' : 'milestone'} style={{ left: '100%' }}>★</span></div><small className="score-readout">{score.toLocaleString()} glow</small></div>
-          <div className="stat-box"><div className="stat-label">Stars</div><div className="stars" aria-label={`${stars} stars`}>{[1, 2, 3].map((star) => <Star key={star} className={stars >= star ? 'star on' : 'star'} fill="currentColor" size={18} />)}</div><div className="stat-note">33 · 66 · 100%</div></div>
-          <div className="stat-box"><div className="stat-label">Moves remaining</div><div className="stat-value text-yellow-200">{moves}</div><div className="stat-note">Make it glow</div></div>
+        <section className="stats-row flex justify-center items-center py-4 relative">
+          <div className="absolute left-6 text-white text-[10px] text-opacity-50 tracking-widest uppercase">Target</div>
+          <div className="flex-1 max-w-[200px] mx-auto relative h-[14px] bg-black/40 rounded-full border border-white/10 shadow-inner">
+             <i className="absolute left-0 top-0 h-full bg-gradient-to-r from-cyan-400 to-yellow-300 rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+             <span className={stars >= 1 ? 'absolute -top-[5px] ml-[-10px] text-yellow-300 drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'absolute -top-[5px] ml-[-10px] text-white/30'} style={{ left: '33%' }}><Star size={24} fill="currentColor" /></span>
+             <span className={stars >= 2 ? 'absolute -top-[5px] ml-[-10px] text-yellow-300 drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'absolute -top-[5px] ml-[-10px] text-white/30'} style={{ left: '66%' }}><Star size={24} fill="currentColor" /></span>
+             <span className={stars >= 3 ? 'absolute -top-[5px] ml-[-10px] text-yellow-300 drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'absolute -top-[5px] ml-[-10px] text-white/30'} style={{ left: '100%' }}><Star size={24} fill="currentColor" /></span>
+          </div>
+          <div className="moves-display absolute right-6 flex flex-col items-center justify-center w-[54px] h-[54px] rounded-full border-[3px] border-cyan-300 bg-[#12053c] shadow-[0_0_15px_rgba(0,240,255,0.3)] z-10">
+            <span className="text-[8px] font-bold text-cyan-200 mt-1 uppercase tracking-widest">Moves</span>
+            <span className="text-[22px] font-black text-white leading-none tracking-tighter mb-1 drop-shadow-md">{moves}</span>
+          </div>
         </section>
-        {levelNumber <= 2 && <div className="play-guide"><span className="guide-step"><b>1</b> Touch</span><span className="guide-line" /><span className="guide-step"><b>2</b> Drag straight</span><span className="guide-line" /><span className="guide-step"><b>3</b> Release</span></div>}
         <section className={`board-wrap ${dragging ? 'is-linking' : ''} ${effect ? `effect-${effect}` : ''}`} ref={boardRef}>
           <div className="board">
             {board.map((tile, index) => <LumenTile key={`${tile.id}-${index}`} tile={tile} index={index} selected={selected.includes(index)} popping={popping.includes(index)} fresh={freshTiles.includes(index)} onPointerDown={(event) => onTilePointerDown(index, event)} />)}
