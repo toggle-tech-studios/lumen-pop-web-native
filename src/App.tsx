@@ -158,12 +158,13 @@ const installGuaranteedLine = (board: Tile[], color: LumenColor = 'solar') => {
 
 const getRandomClusterLength = () => {
   const r = Math.random();
-  return r < 0.55 ? 3 : r < 0.90 ? 4 : 5;
+  return r < 0.75 ? 3 : r < 0.97 ? 4 : 5;
 };
 
 const makeBoard = (level = 1): Tile[] => {
   const board: Tile[] = Array(36).fill(null);
   const colorBag: LumenColor[] = [];
+  let vortexSpawned = false;
   
   for (let i = 0; i < 36; i++) {
     if (colorBag.length === 0) {
@@ -171,16 +172,17 @@ const makeBoard = (level = 1): Tile[] => {
       const color = randomColor();
       for (let j = 0; j < len; j++) colorBag.push(color);
     }
-    const isFusion = level >= 3 && Math.random() < 0.085;
+    const isFusion = !vortexSpawned && Math.random() < 0.05;
     if (isFusion) {
       board[i] = { id: freshTileId(), color: 'cosmic', fusion: true };
+      vortexSpawned = true;
     } else {
       board[i] = { id: freshTileId(), color: colorBag.shift()! };
     }
   }
 
   if (!hasPlayableChain(board)) {
-    installGuaranteedLine(board, level <= 2 ? 'solar' : randomColor());
+    installGuaranteedLine(board, randomColor());
   }
   return board;
 };
@@ -189,6 +191,7 @@ const collapseBoard = (board: (Tile | null)[], level = 1, spawnVortex = false) =
   const next: (Tile | null)[] = Array(36).fill(null);
   const refilled: number[] = [];
   const colorBag: LumenColor[] = [];
+  let vortexSpawned = false;
   
   for (let col = 0; col < BOARD_SIZE; col += 1) {
     const survivors: Tile[] = [];
@@ -204,9 +207,10 @@ const collapseBoard = (board: (Tile | null)[], level = 1, spawnVortex = false) =
           const color = randomColor();
           for (let j = 0; j < len; j++) colorBag.push(color);
         }
-        const isFusion = level >= 3 && Math.random() < 0.085;
+        const isFusion = !vortexSpawned && Math.random() < 0.05;
         if (isFusion) {
           next[row * BOARD_SIZE + col] = { id: freshTileId(), color: 'cosmic', fusion: true };
+          vortexSpawned = true;
         } else {
           next[row * BOARD_SIZE + col] = { id: freshTileId(), color: colorBag.shift()! };
         }
@@ -216,7 +220,7 @@ const collapseBoard = (board: (Tile | null)[], level = 1, spawnVortex = false) =
   }
 
   if (!hasPlayableChain(next)) {
-    installGuaranteedLine(next as Tile[], level <= 2 ? 'solar' : randomColor());
+    installGuaranteedLine(next as Tile[], randomColor());
   }
   return { board: next as Tile[], refilled };
 };
@@ -372,11 +376,12 @@ function LoadingScreen({ onDone }: { onDone: () => void }) {
     return () => window.clearTimeout(timer);
   }, [onDone]);
   return (
-    <div className="center-screen game-shell">
-      <div className="text-center">
-        <img className="loading-art" src={`${ASSET}${loadingAsset}`} alt="Lumen Pop loading" />
-        <p className="eyebrow mt-3">Waking the Lumens...</p>
-        <div className="loading-bar mx-auto mt-4 h-1 w-36 overflow-hidden rounded-full bg-white/15"><i className="block h-full w-1/2 animate-[shimmer_1.5s_ease-in-out_infinite] bg-cyan-300" /></div>
+    <div className="screen">
+      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${ASSET}${loadingAsset})` }} />
+      <div className="absolute inset-0 bg-black/30" />
+      <div className="absolute inset-x-0 bottom-16 flex flex-col items-center justify-center">
+        <p className="eyebrow mt-3 text-white drop-shadow-md">Waking the Lumens...</p>
+        <div className="loading-bar mx-auto mt-4 h-1 w-48 overflow-hidden rounded-full bg-white/20 shadow-[0_0_10px_rgba(0,0,0,0.5)]"><i className="block h-full w-1/2 animate-[shimmer_1.5s_ease-in-out_infinite] bg-cyan-300 shadow-[0_0_10px_#00F0FF]" /></div>
       </div>
     </div>
   );
@@ -394,10 +399,11 @@ function LevelLoadingScreen({ level, onReady }: { level: number; onReady: () => 
     let finished = false;
     loadedRef.current = 0;
     setLoaded(0);
+    const biomeIndex = Math.floor((level - 1) / 10);
     const sources = [
       ...Object.values(lumenAssets).flatMap((asset) => [asset.closed, asset.opened]),
       fusionOrbAsset,
-      backgrounds[Math.min(backgrounds.length - 1, Math.floor(level / 2))],
+      backgrounds[Math.min(backgrounds.length - 1, biomeIndex)],
     ];
     setTotal(sources.length);
     const markLoaded = () => {
@@ -429,13 +435,13 @@ function LevelLoadingScreen({ level, onReady }: { level: number; onReady: () => 
 
   const percent = Math.max(8, Math.round((loaded / total) * 100));
   return (
-    <div className="center-screen game-shell level-loading-screen">
-      <div className="level-loading-card">
-        <img className="level-loading-logo" src={`${ASSET}${logoAsset}`} alt="Lumen Pop" />
-        <p className="eyebrow">Preparing level {level}</p>
-        <h1 className="display">Gathering the glow...</h1>
-        <div className="loading-bar wide-loading-bar"><i style={{ width: `${percent}%` }} /></div>
-        <span className="loading-status">{loaded >= total ? 'The Lumens are ready' : 'Waking the Lumens for your board'}</span>
+    <div className="screen flex flex-col items-center justify-center bg-[#12053c] level-loading-screen p-8 text-center">
+      <div className="level-loading-card w-full max-w-[340px] rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur-md">
+        <img className="level-loading-logo mx-auto mb-6 h-16 w-16 rounded-[1.25rem] shadow-[0_4px_24px_rgba(255,235,100,0.2)]" src={`${ASSET}${logoAsset}`} alt="Lumen Pop" />
+        <p className="eyebrow text-[10px] uppercase tracking-widest text-cyan-200">Preparing level {level}</p>
+        <h1 className="display mt-1 text-2xl font-bold tracking-tight text-white">Gathering the glow...</h1>
+        <div className="loading-bar wide-loading-bar relative mx-auto mt-6 h-1.5 w-full overflow-hidden rounded-full bg-black/40 shadow-inner"><i className="absolute inset-y-0 left-0 bg-gradient-to-r from-cyan-400 to-yellow-300 transition-all duration-300 ease-out" style={{ width: `${percent}%` }} /></div>
+        <span className="loading-status mt-4 block text-[11px] text-white/50">{loaded >= total ? 'The Lumens are ready' : 'Waking the Lumens for your board'}</span>
       </div>
     </div>
   );
@@ -808,29 +814,34 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     play('wake');
   };
 
-  const onBoardPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+  const onGlobalPointerMove = useCallback((event: globalThis.PointerEvent) => {
     if (!dragging || activeBooster) return;
-    const element = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-index]') as HTMLElement | null;
-    let index = element?.dataset.index === undefined ? undefined : Number(element.dataset.index);
-    if (index === undefined) {
-      const grid = boardRef.current?.querySelector('.board');
-      const rect = grid?.getBoundingClientRect();
-      if (rect && rect.width > 0 && rect.height > 0) {
-        const col = Math.max(0, Math.min(BOARD_SIZE - 1, Math.round(((event.clientX - rect.left) / rect.width) * BOARD_SIZE - 0.5)));
-        const row = Math.max(0, Math.min(BOARD_SIZE - 1, Math.round(((event.clientY - rect.top) / rect.height) * BOARD_SIZE - 0.5)));
-        index = row * BOARD_SIZE + col;
+    let index: number | undefined;
+    const grid = boardRef.current?.querySelector('.board');
+    const rect = grid?.getBoundingClientRect();
+    if (rect && rect.width > 0 && rect.height > 0) {
+      if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) {
+        const col = Math.floor(((event.clientX - rect.left) / rect.width) * BOARD_SIZE);
+        const row = Math.floor(((event.clientY - rect.top) / rect.height) * BOARD_SIZE);
+        index = Math.max(0, Math.min(BOARD_SIZE * BOARD_SIZE - 1, row * BOARD_SIZE + col));
       }
     }
     if (index !== undefined) addToChain(index);
-  };
+  }, [dragging, activeBooster, addToChain]);
 
   useEffect(() => {
     const release = () => {
       if (dragging) finishTurn(chainRef.current);
     };
-    window.addEventListener('pointerup', release);
-    return () => window.removeEventListener('pointerup', release);
-  }, [dragging, finishTurn]);
+    if (dragging) {
+      window.addEventListener('pointermove', onGlobalPointerMove);
+      window.addEventListener('pointerup', release);
+    }
+    return () => {
+      window.removeEventListener('pointermove', onGlobalPointerMove);
+      window.removeEventListener('pointerup', release);
+    };
+  }, [dragging, finishTurn, onGlobalPointerMove]);
 
   useEffect(() => {
     if (score < config.targetScore || completionSentRef.current || overlay) return;
@@ -861,7 +872,7 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
           <div className="stat-box"><div className="stat-label">Moves remaining</div><div className="stat-value text-yellow-200">{moves}</div><div className="stat-note">Make it glow</div></div>
         </section>
         {levelNumber <= 2 && <div className="play-guide"><span className="guide-step"><b>1</b> Touch</span><span className="guide-line" /><span className="guide-step"><b>2</b> Drag straight</span><span className="guide-line" /><span className="guide-step"><b>3</b> Release</span></div>}
-        <section className={`board-wrap ${dragging ? 'is-linking' : ''} ${effect ? `effect-${effect}` : ''}`} ref={boardRef} onPointerMove={onBoardPointerMove}>
+        <section className={`board-wrap ${dragging ? 'is-linking' : ''} ${effect ? `effect-${effect}` : ''}`} ref={boardRef}>
           <div className="board">
             {board.map((tile, index) => <LumenTile key={`${tile.id}-${index}`} tile={tile} index={index} selected={selected.includes(index)} popping={popping.includes(index)} fresh={freshTiles.includes(index)} onPointerDown={(event) => onTilePointerDown(index, event)} />)}
           </div>
