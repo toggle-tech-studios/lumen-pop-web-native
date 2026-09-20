@@ -12,6 +12,14 @@ import {
 import { auth, db, rtdb, googleProvider, appleProvider } from './firebase';
 import { ChevronRight, User as UserIcon, X, LogOut, Mail, Sparkles, Trophy, Gem, ShieldCheck } from 'lucide-react';
 
+// Helper to guarantee network calls never hang indefinitely
+function withTimeout<T>(promise: Promise<T>, ms = 2000): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))
+  ]);
+}
+
 // --- UsernameScreen ---
 
 export function UsernameScreen({ 
@@ -41,27 +49,36 @@ export function UsernameScreen({
     const lower = clean.toLowerCase();
     let isTaken = false;
 
-    // 1. Check in Realtime Database (if available)
-    if (rtdb) {
-      try {
-        const snapshot = await dbGet(dbRef(rtdb, `usernames/${lower}`));
-        if (snapshot.exists()) {
-          isTaken = true;
-        }
-      } catch (rtdbErr) {
-        console.warn('RTDB check note:', rtdbErr);
+    // Check localStorage cache
+    try {
+      if (localStorage.getItem(`lp_user_${lower}`)) {
+        isTaken = true;
       }
+    } catch {
+      // ignore
     }
 
-    // 2. Check in Cloud Firestore (if available and not already marked taken)
+    // 1. Check in Cloud Firestore (with 2s timeout)
     if (!isTaken && db) {
       try {
-        const snap = await getDoc(doc(db, 'usernames', lower));
-        if (snap.exists()) {
+        const snap = await withTimeout(getDoc(doc(db, 'usernames', lower)), 2000);
+        if (snap && snap.exists()) {
           isTaken = true;
         }
       } catch (fsErr) {
         console.warn('Firestore check note:', fsErr);
+      }
+    }
+
+    // 2. Check in Realtime Database (with 2s timeout)
+    if (!isTaken && rtdb) {
+      try {
+        const snapshot = await withTimeout(dbGet(dbRef(rtdb, `usernames/${lower}`)), 2000);
+        if (snapshot && snapshot.exists()) {
+          isTaken = true;
+        }
+      } catch (rtdbErr) {
+        console.warn('RTDB check note:', rtdbErr);
       }
     }
 
@@ -71,26 +88,24 @@ export function UsernameScreen({
       return;
     }
 
-    // Reserve username in both databases
+    // Reserve username asynchronously (non-blocking)
     const payload = {
       username: clean,
       createdAt: new Date().toISOString()
     };
 
-    if (rtdb) {
-      try {
-        await dbSet(dbRef(rtdb, `usernames/${lower}`), payload);
-      } catch (err) {
-        console.warn('RTDB reserve notice:', err);
-      }
+    try {
+      localStorage.setItem(`lp_user_${lower}`, 'true');
+    } catch {
+      // ignore
     }
 
     if (db) {
-      try {
-        await setDoc(doc(db, 'usernames', lower), payload, { merge: true });
-      } catch (err) {
-        console.warn('Firestore reserve notice:', err);
-      }
+      withTimeout(setDoc(doc(db, 'usernames', lower), payload, { merge: true }), 2000).catch(() => undefined);
+    }
+
+    if (rtdb) {
+      withTimeout(dbSet(dbRef(rtdb, `usernames/${lower}`), payload), 2000).catch(() => undefined);
     }
 
     setLoading(false);

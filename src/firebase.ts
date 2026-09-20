@@ -10,8 +10,7 @@ const firebaseConfig = {
   storageBucket: "lumen-pop.firebasestorage.app",
   messagingSenderId: "516148988894",
   appId: "1:516148988894:web:6dcc995e309ed580d7eb4f",
-  measurementId: "G-C58YK1LJ6X",
-  databaseURL: "https://lumen-pop-default-rtdb.firebaseio.com"
+  measurementId: "G-C58YK1LJ6X"
 };
 
 export const app = initializeApp(firebaseConfig);
