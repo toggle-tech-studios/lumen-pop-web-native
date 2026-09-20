@@ -83,20 +83,83 @@ const writeProgress = (progress: SavedProgress) => {
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
+const colorsForLevel = (level: number): LumenColor[] => {
+  if (level <= 4) {
+    // 4 high-contrast colors for clean early levels
+    return ['solar', 'verdant', 'terra', 'aether'];
+  }
+  if (level <= 9) {
+    // 5 colors: introduces Nova (pink)
+    return ['solar', 'verdant', 'terra', 'aether', 'nova'];
+  }
+  if (level <= 19) {
+    // 6 colors: introduces Cosmic (purple)
+    return ['solar', 'verdant', 'terra', 'aether', 'nova', 'cosmic'];
+  }
+  // Level 20+: all 7 colors (adds Blaze)
+  return ['solar', 'verdant', 'terra', 'aether', 'nova', 'cosmic', 'blaze'];
+};
+
 const levelConfig = (level: number) => {
   const biomeIndex = Math.floor((level - 1) / 10);
+  const activeColors = colorsForLevel(level);
+
+  let targetScore = 500;
+  let moves = 15;
+
+  if (level === 1) {
+    // Level 1: Gentle introduction, clear in ~5-7 moves
+    targetScore = 500;
+    moves = 14;
+  } else if (level === 2) {
+    targetScore = 750;
+    moves = 14;
+  } else if (level === 3) {
+    targetScore = 1000;
+    moves = 15;
+  } else if (level === 4) {
+    targetScore = 1250;
+    moves = 15;
+  } else if (level <= 9) {
+    // 5-color levels: Medium challenge
+    targetScore = 1500 + (level - 5) * 350;
+    moves = 16;
+  } else if (level <= 19) {
+    // 6-color levels: Medium-Hard challenge
+    targetScore = 3200 + (level - 10) * 400;
+    moves = 17;
+  } else {
+    // 7-color master levels
+    targetScore = Math.min(18000, 7500 + (level - 20) * 500);
+    moves = 18;
+  }
+
   return {
     level,
-    targetScore: Math.min(20000, 1200 + (level - 1) * 450),
-    moves: Math.max(12, Math.min(22, 16 + Math.floor((level - 1) / 5))),
+    targetScore,
+    moves,
+    activeColors,
     world: level < 11 ? 'Starlight Meadows' : level < 26 ? 'Crystal Valley' : 'Twilight Grove',
-    title: level < 11 ? 'First Glow' : level < 26 ? 'Crystal Drift' : 'Moonlit Bloom',
-    lesson: level <= 2 ? 'Make an easy 3-link to wake the meadow' : level <= 5 ? 'Longer chains charge brighter rewards' : 'Find the clearest line through the glow',
+    title: level < 11 ? `First Glow ${level}` : level < 26 ? `Crystal Drift ${level}` : `Moonlit Bloom ${level}`,
+    lesson: level === 1
+      ? 'Link 3 matching Lumens in a straight line'
+      : level === 2
+      ? 'Link 4 to blast an entire row or column'
+      : level === 3
+      ? 'Link 5 for a 3x3 Nova explosion'
+      : level === 5
+      ? 'A new Lumen color has awakened! Plan your lines'
+      : level < 10
+      ? 'Create 4+ links for special bursts toward your target'
+      : 'Master the meadow with cross-beams and full-color sweeps',
     canSpawnVortex: true,
   };
 };
 
-const randomColor = () => colors[Math.floor(Math.random() * colors.length)];
+const randomColorForLevel = (level: number) => {
+  const pool = colorsForLevel(level);
+  return pool[Math.floor(Math.random() * pool.length)];
+};
 const rowOf = (index: number) => Math.floor(index / BOARD_SIZE);
 const colOf = (index: number) => index % BOARD_SIZE;
 const lineDirections: LineDirection[] = [
@@ -135,6 +198,31 @@ const hasPlayableChain = (board: (Tile | null)[]) => {
   return false;
 };
 
+const countPlayableChains = (board: (Tile | null)[]) => {
+  let count = 0;
+  for (let start = 0; start < board.length; start += 1) {
+    const tile = board[start];
+    if (!tile) continue;
+    for (const direction of lineDirections) {
+      let length = 1;
+      let row = rowOf(start) + direction.row;
+      let col = colOf(start) + direction.col;
+      while (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE) {
+        const next = row * BOARD_SIZE + col;
+        if (board[next]?.color !== tile.color) break;
+        length += 1;
+        if (length === 3) {
+          count += 1;
+          break;
+        }
+        row += direction.row;
+        col += direction.col;
+      }
+    }
+  }
+  return count;
+};
+
 const installGuaranteedLine = (board: Tile[], color: LumenColor = 'solar') => {
   const isRow = Math.random() < 0.5;
   if (isRow) {
@@ -161,25 +249,23 @@ const getRandomClusterLength = () => {
 const makeBoard = (level = 1): Tile[] => {
   const board: Tile[] = Array(BOARD_SIZE * BOARD_SIZE).fill(null);
   const colorBag: LumenColor[] = [];
-  let vortexSpawned = false;
-  
+  const levelColors = colorsForLevel(level);
+
   for (let i = 0; i < BOARD_SIZE * BOARD_SIZE; i++) {
     if (colorBag.length === 0) {
       const len = getRandomClusterLength();
-      const color = randomColor();
+      const color = levelColors[Math.floor(Math.random() * levelColors.length)];
       for (let j = 0; j < len; j++) colorBag.push(color);
     }
-    const isFusion = false;
-    if (isFusion) {
-      board[i] = { id: freshTileId(), color: 'cosmic', fusion: true };
-      vortexSpawned = true;
-    } else {
-      board[i] = { id: freshTileId(), color: colorBag.shift()! };
-    }
+    board[i] = { id: freshTileId(), color: colorBag.shift()! };
   }
 
-  if (!hasPlayableChain(board)) {
-    installGuaranteedLine(board, randomColor());
+  // Guarantee at least 3 distinct playable chains on initial board
+  let attempts = 0;
+  while (countPlayableChains(board) < 3 && attempts < 12) {
+    attempts++;
+    const col = levelColors[Math.floor(Math.random() * levelColors.length)];
+    installGuaranteedLine(board, col);
   }
   return board;
 };
@@ -188,8 +274,9 @@ const collapseBoard = (board: (Tile | null)[], level = 1) => {
   const next: (Tile | null)[] = Array(BOARD_SIZE * BOARD_SIZE).fill(null);
   const refilled: number[] = [];
   const colorBag: LumenColor[] = [];
+  const levelColors = colorsForLevel(level);
   let vortexSpawned = false;
-  
+
   for (let col = 0; col < BOARD_SIZE; col += 1) {
     const survivors: Tile[] = [];
     for (let row = BOARD_SIZE - 1; row >= 0; row -= 1) {
@@ -201,7 +288,7 @@ const collapseBoard = (board: (Tile | null)[], level = 1) => {
       else {
         if (colorBag.length === 0) {
           const len = getRandomClusterLength();
-          const color = randomColor();
+          const color = levelColors[Math.floor(Math.random() * levelColors.length)];
           for (let j = 0; j < len; j++) colorBag.push(color);
         }
         const isFusion = !vortexSpawned && Math.random() < 0.03;
@@ -217,7 +304,8 @@ const collapseBoard = (board: (Tile | null)[], level = 1) => {
   }
 
   if (!hasPlayableChain(next)) {
-    installGuaranteedLine(next as Tile[], randomColor());
+    const col = levelColors[Math.floor(Math.random() * levelColors.length)];
+    installGuaranteedLine(next as Tile[], col);
   }
   return { board: next as Tile[], refilled };
 };
