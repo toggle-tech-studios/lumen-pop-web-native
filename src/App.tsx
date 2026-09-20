@@ -688,6 +688,8 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
   const toastTimerRef = useRef<number | null>(null);
   const effectTimerRef = useRef<number | null>(null);
   const freshTimerRef = useRef<number | null>(null);
+  const winTimerRef = useRef<number | null>(null);
+  const loseTimerRef = useRef<number | null>(null);
   if (!soundRef.current) soundRef.current = createSoundEngine();
 
   const starsForScore = (value: number) => value >= config.targetScore ? 3 : value >= config.targetScore * 0.66 ? 2 : value >= config.targetScore * 0.33 ? 1 : 0;
@@ -718,54 +720,8 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     setActiveType(null);
   }, []);
 
-
-  const surgeTickRef = useRef(false);
-
-  const startLumenSurge = useCallback((currentBoard: Tile[], scoreAcc: number) => {
-    if (moves <= 0) {
-      if (!completionSentRef.current) {
-        completionSentRef.current = true;
-        window.setTimeout(() => {
-          play('win');
-          setOverlay('complete');
-          onComplete(score + scoreAcc, starsForScore(score + scoreAcc));
-        }, 760);
-      }
-      return;
-    }
-    
-    setMoves(m => m - 1);
-    
-    const normalIndices: number[] = [];
-    for (let i = 0; i < BOARD_SIZE * BOARD_SIZE; i++) {
-      if (currentBoard[i] && !currentBoard[i]?.fusion && !currentBoard[i]?.special) {
-        normalIndices.push(i);
-      }
-    }
-    
-    if (normalIndices.length === 0) {
-      setScore(s => s + 50);
-      window.setTimeout(() => startLumenSurge(currentBoard, scoreAcc + 50), 300);
-      return;
-    }
-    
-    const target = normalIndices[Math.floor(Math.random() * normalIndices.length)];
-    const special = Math.random() > 0.5 ? 'nova' : (Math.random() > 0.5 ? 'beam_h' : 'beam_v');
-    
-    const newBoard = [...currentBoard];
-    newBoard[target] = { ...newBoard[target], special, id: freshTileId() } as Tile;
-    setBoard(newBoard);
-    play('wake'); 
-    
-    window.setTimeout(() => {
-      activateVortex(target, newBoard[target].color, true, newBoard, scoreAcc);
-    }, 400);
-    
-  }, [moves, score, onComplete, play, starsForScore]);
-
-
-  const activateVortex = useCallback((index: number, chainColor: LumenColor, isSurge = false, currentBoard = board, scoreAcc = 0) => {
-    if (busyRef.current && !isSurge) return;
+  const activateVortex = useCallback((index: number, chainColor: LumenColor, currentBoard = board, scoreAcc = 0) => {
+    if (busyRef.current || overlay || completionSentRef.current) return;
     busyRef.current = true;
     
     const tile = currentBoard[index];
@@ -807,11 +763,9 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     
     const uniqueIndices = Array.from(cleared);
     
-    if (!isSurge) {
-      setMoves((current) => Math.max(0, current - 1));
-      showToast('Special released · energy mixed');
-      clearActiveChain();
-    }
+    setMoves((current) => Math.max(0, current - 1));
+    showToast('Special released · energy mixed');
+    clearActiveChain();
     
     setPopping(uniqueIndices);
     setEffect('vortex');
@@ -832,20 +786,36 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
         return result.board;
       });
       setPopping([]);
-      setScore(current => current + scoreAcc + uniqueIndices.length * 10);
+      const pointsGained = scoreAcc + uniqueIndices.length * 10;
+      setScore(current => {
+        const nextScore = current + pointsGained;
+        if (nextScore >= config.targetScore && !completionSentRef.current) {
+          completionSentRef.current = true;
+          if (winTimerRef.current) window.clearTimeout(winTimerRef.current);
+          winTimerRef.current = window.setTimeout(() => {
+            play('win');
+            setOverlay('complete');
+            onComplete(nextScore, starsForScore(nextScore));
+          }, 600);
+        } else if (nextScore < config.targetScore && moves - 1 <= 0 && !completionSentRef.current) {
+          if (loseTimerRef.current) window.clearTimeout(loseTimerRef.current);
+          loseTimerRef.current = window.setTimeout(() => {
+            play('lose');
+            setOverlay('fail');
+          }, 600);
+        }
+        return nextScore;
+      });
       
       window.setTimeout(() => {
         busyRef.current = false;
-        if (isSurge) {
-           startLumenSurge(board, 0); // Trigger next surge tick
-        }
       }, 400);
 
     }, 460);
-  }, [board, clearActiveChain, showToast, play, levelNumber, startLumenSurge]);
+  }, [board, clearActiveChain, showToast, play, levelNumber, overlay, moves, config.targetScore, onComplete, starsForScore]);
 
   const performRemoval = useCallback((indices: number[], chainColor: LumenColor, bonus = 0, mode: 'pop' | 'vortex' | 'booster' = 'pop') => {
-    if (busyRef.current) return;
+    if (busyRef.current || overlay || completionSentRef.current) return;
     busyRef.current = true;
     const uniqueIndices = [...new Set(indices)];
     setPopping(uniqueIndices);
@@ -866,38 +836,35 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
         return result.board;
       });
       setPopping([]);
-      setScore(current => current + bonus);
+      setScore(current => {
+        const nextScore = current + bonus;
+        if (nextScore >= config.targetScore && !completionSentRef.current) {
+          completionSentRef.current = true;
+          if (winTimerRef.current) window.clearTimeout(winTimerRef.current);
+          winTimerRef.current = window.setTimeout(() => {
+            play('win');
+            setOverlay('complete');
+            onComplete(nextScore, starsForScore(nextScore));
+          }, 600);
+        } else if (nextScore < config.targetScore && moves <= 0 && !completionSentRef.current) {
+          if (loseTimerRef.current) window.clearTimeout(loseTimerRef.current);
+          loseTimerRef.current = window.setTimeout(() => {
+            play('lose');
+            setOverlay('fail');
+          }, 600);
+        }
+        return nextScore;
+      });
       
       window.setTimeout(() => {
         busyRef.current = false;
-        
-        // check win/loss after gravity settles
-        setScore(currentScore => {
-          if (currentScore >= config.targetScore && moves > 0) {
-            startLumenSurge(board, 0); // Need to pass the latest board somehow, but startLumenSurge handles it
-          } else if (currentScore >= config.targetScore && moves <= 0 && !completionSentRef.current) {
-            completionSentRef.current = true;
-            window.setTimeout(() => {
-              play('win');
-              setOverlay('complete');
-              onComplete(currentScore, starsForScore(currentScore));
-            }, 760);
-          } else if (currentScore < config.targetScore && moves <= 0) {
-            window.setTimeout(() => {
-              play('lose');
-              setOverlay('fail');
-            }, 820);
-          }
-          return currentScore;
-        });
-
       }, 400);
 
     }, mode === 'vortex' ? 460 : 300);
-  }, [levelNumber, play, moves, config.targetScore, startLumenSurge, onComplete, starsForScore]);
+  }, [levelNumber, play, moves, config.targetScore, overlay, onComplete, starsForScore]);
 
   const finishTurn = useCallback((chain: number[]) => {
-    if (busyRef.current) return;
+    if (busyRef.current || overlay || completionSentRef.current) return;
     
     // Check if the user touched a vortex directly
     const specialIndex = chain.find((index) => board[index]?.fusion || board[index]?.special);
@@ -954,7 +921,7 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     performRemoval(allToClear, chainColor, gained, extra.size > 0 ? 'vortex' : 'pop');
     
     clearActiveChain();
-  }, [activateVortex, board, clearActiveChain, moves, play, scoreForChain, showToast, performRemoval]);
+  }, [activateVortex, board, clearActiveChain, moves, overlay, play, scoreForChain, showToast, performRemoval]);
 
 
 
@@ -987,21 +954,22 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
   }, []);
 
   const startDragAt = useCallback((index: number) => {
+    if (busyRef.current || overlay || completionSentRef.current) return;
     if (activeBooster) {
       applyBooster(activeBooster, index);
       return;
     }
-    if (busyRef.current || !board[index]) return;
+    if (!board[index]) return;
     chainRef.current = [index];
     chainDirectionRef.current = null;
     setSelected([index]);
     setActiveType(board[index].color);
     setDragging(true);
     play('wake');
-  }, [activeBooster, board, play]);
+  }, [activeBooster, board, overlay, play]);
 
   const addToChain = useCallback((targetIndex: number) => {
-    if (busyRef.current || activeBooster) return;
+    if (busyRef.current || activeBooster || overlay || completionSentRef.current) return;
     const chain = chainRef.current;
     if (!chain.length || !activeType) return;
 
@@ -1078,7 +1046,7 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
       setSelected([...chain]);
       play('link', Math.min(3, chain.length / 2));
     }
-  }, [activeBooster, activeType, board, play]);
+  }, [activeBooster, activeType, board, overlay, play]);
 
   const applyBooster = (kind: BoosterKind, index: number) => {
     const price = boosterPrices[kind];
@@ -1131,6 +1099,12 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
   };
 
   const resetGame = () => {
+    if (winTimerRef.current) window.clearTimeout(winTimerRef.current);
+    if (loseTimerRef.current) window.clearTimeout(loseTimerRef.current);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    if (effectTimerRef.current) window.clearTimeout(effectTimerRef.current);
+    if (freshTimerRef.current) window.clearTimeout(freshTimerRef.current);
+
     rngRef.current = createLevelPRNG(levelNumber * 7919 + 104729);
     busyRef.current = false;
     completionSentRef.current = false;
@@ -1148,6 +1122,7 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
 
   const onTilePointerDown = (index: number, event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
+    if (busyRef.current || overlay || completionSentRef.current) return;
     soundRef.current?.unlock();
     startDragAt(index);
   };
@@ -1182,14 +1157,17 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
   useEffect(() => {
     if (score < config.targetScore || completionSentRef.current || overlay) return;
     completionSentRef.current = true;
-    window.setTimeout(() => {
+    if (winTimerRef.current) window.clearTimeout(winTimerRef.current);
+    winTimerRef.current = window.setTimeout(() => {
       play('win');
       setOverlay('complete');
       onComplete(score, starsForScore(score));
-    }, 700);
+    }, 600);
   }, [config.targetScore, onComplete, overlay, play, score]);
 
   useEffect(() => () => {
+    if (winTimerRef.current) window.clearTimeout(winTimerRef.current);
+    if (loseTimerRef.current) window.clearTimeout(loseTimerRef.current);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     if (effectTimerRef.current) window.clearTimeout(effectTimerRef.current);
     if (freshTimerRef.current) window.clearTimeout(freshTimerRef.current);
