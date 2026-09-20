@@ -444,6 +444,35 @@ function LevelLoadingScreen({ level, onReady }: { level: number; onReady: () => 
   );
 }
 
+
+function FloatingClouds() {
+  return (
+    <div className="floating-clouds-container" aria-hidden="true">
+      <div className="cloud-item cloud-1">
+        <svg viewBox="0 0 160 50" className="w-full h-full fill-current">
+          <path d="M15 35 Q5 35 5 25 Q5 15 20 15 Q25 5 45 7 Q60 0 75 8 Q90 2 105 10 Q120 4 135 16 Q150 15 152 26 Q160 28 160 36 Q160 45 145 45 L18 45 Z" />
+        </svg>
+      </div>
+      <div className="cloud-item cloud-2">
+        <svg viewBox="0 0 180 55" className="w-full h-full fill-current">
+          <path d="M18 38 Q6 38 6 28 Q6 16 22 16 Q28 4 50 6 Q68 0 85 9 Q102 3 118 11 Q135 5 150 18 Q166 17 168 28 Q178 30 178 40 Q178 48 162 48 L22 48 Z" />
+        </svg>
+      </div>
+      <div className="cloud-item cloud-3">
+        <svg viewBox="0 0 140 45" className="w-full h-full fill-current">
+          <path d="M12 32 Q4 32 4 22 Q4 14 18 14 Q22 4 40 6 Q54 0 68 8 Q82 2 95 9 Q108 4 120 15 Q132 14 135 24 Q142 26 142 34 Q142 42 128 42 L16 42 Z" />
+        </svg>
+      </div>
+
+      <span className="cosmic-sparkle sparkle-1">✦</span>
+      <span className="cosmic-sparkle sparkle-2">★</span>
+      <span className="cosmic-sparkle sparkle-3">✦</span>
+      <span className="cosmic-sparkle sparkle-4">★</span>
+      <span className="cosmic-sparkle sparkle-5">✦</span>
+    </div>
+  );
+}
+
 function StartScreen({ onStart }: { onStart: () => void }) {
   return (
     <div className="center-screen game-shell">
@@ -499,6 +528,7 @@ function HomeScreen({ progress, onGame, onSettings, onGift }: { progress: SavedP
   return (
     <div className="screen game-shell" style={{ overflow: 'hidden' }}>
       <div className="world-bg" style={{ backgroundImage: `url(${ASSET}${backgrounds[Math.floor((latest - 1) / 10) % backgrounds.length]})`, opacity: 0.3 }} />
+      <FloatingClouds />
       <main className="home-content" style={{ overflowY: 'auto', display: 'block', paddingBottom: '120px' }}>
         <div className="welcome-card pb-6">
           <div><span className="eyebrow">THE FIRST SPARK</span><h1>Good morning,<br />stargazer.</h1><p>The Lumens are humming your name.</p></div>
@@ -881,25 +911,125 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
 
 
 
-  const addToChain = useCallback((index: number) => {
-    if (busyRef.current || activeBooster) return;
-    const tile = board[index];
-    if (!tile || !activeType) return;
-    const chain = chainRef.current;
-    if (chain.length > 1 && chain[chain.length - 2] === index) {
-      chain.pop();
-      chainDirectionRef.current = chain.length > 1 ? directionBetween(chain[0], chain[1]) : null;
-      setSelected([...chain]);
-      play('backtrack');
+  const getIndexFromPoint = useCallback((clientX: number, clientY: number): number | null => {
+    const grid = boardRef.current?.querySelector('.board');
+    if (!grid) return null;
+    const rect = grid.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+
+    const slop = 16;
+    if (
+      clientX < rect.left - slop ||
+      clientX > rect.right + slop ||
+      clientY < rect.top - slop ||
+      clientY > rect.bottom + slop
+    ) {
+      return null;
+    }
+
+    const clampX = Math.max(rect.left, Math.min(rect.right - 0.001, clientX));
+    const clampY = Math.max(rect.top, Math.min(rect.bottom - 0.001, clientY));
+    const col = Math.floor(((clampX - rect.left) / rect.width) * BOARD_SIZE);
+    const row = Math.floor(((clampY - rect.top) / rect.height) * BOARD_SIZE);
+    const index = row * BOARD_SIZE + col;
+    if (index >= 0 && index < BOARD_SIZE * BOARD_SIZE) {
+      return index;
+    }
+    return null;
+  }, []);
+
+  const startDragAt = useCallback((index: number) => {
+    if (activeBooster) {
+      applyBooster(activeBooster, index);
       return;
     }
-    if (chain.includes(index) || tile.color !== activeType) return;
-    const direction = chainDirectionRef.current ?? directionBetween(chain[chain.length - 1], index);
-    if (!direction || !lineStep(chain[chain.length - 1], index, direction)) return;
-    if (chain.length === 1) chainDirectionRef.current = direction;
-    chain.push(index);
-    setSelected([...chain]);
-    play('link', Math.min(3, chain.length / 2));
+    if (busyRef.current || !board[index]) return;
+    chainRef.current = [index];
+    chainDirectionRef.current = null;
+    setSelected([index]);
+    setActiveType(board[index].color);
+    setDragging(true);
+    play('wake');
+  }, [activeBooster, board, play]);
+
+  const addToChain = useCallback((targetIndex: number) => {
+    if (busyRef.current || activeBooster) return;
+    const chain = chainRef.current;
+    if (!chain.length || !activeType) return;
+
+    const lastIndex = chain[chain.length - 1];
+    if (targetIndex === lastIndex) return;
+
+    // Backtrack support: if moving backwards to an earlier tile in the chain
+    if (chain.includes(targetIndex)) {
+      const pos = chain.indexOf(targetIndex);
+      if (pos < chain.length - 1) {
+        chain.splice(pos + 1);
+        chainDirectionRef.current = chain.length > 1 ? directionBetween(chain[0], chain[1]) : null;
+        setSelected([...chain]);
+        play('backtrack');
+      }
+      return;
+    }
+
+    const tile = board[targetIndex];
+    if (!tile || tile.color !== activeType) return;
+
+    // Calculate step direction from lastIndex to targetIndex
+    const rowDiff = rowOf(targetIndex) - rowOf(lastIndex);
+    const colDiff = colOf(targetIndex) - colOf(lastIndex);
+    if (rowDiff === 0 && colDiff === 0) return;
+
+    let stepDir: LineDirection | null = null;
+    if (rowDiff === 0) {
+      stepDir = { row: 0, col: Math.sign(colDiff) };
+    } else if (colDiff === 0) {
+      stepDir = { row: Math.sign(rowDiff), col: 0 };
+    } else if (Math.abs(rowDiff) === Math.abs(colDiff)) {
+      stepDir = { row: Math.sign(rowDiff), col: Math.sign(colDiff) };
+    }
+
+    if (!stepDir) return;
+
+    if (chainDirectionRef.current) {
+      if (
+        chainDirectionRef.current.row !== stepDir.row ||
+        chainDirectionRef.current.col !== stepDir.col
+      ) {
+        return;
+      }
+    }
+
+    // Step through intermediate tiles (solves skipping tiles on fast swipes)
+    let curr = lastIndex;
+    const toAdd: number[] = [];
+    let valid = true;
+
+    while (curr !== targetIndex) {
+      const nRow = rowOf(curr) + stepDir.row;
+      const nCol = colOf(curr) + stepDir.col;
+      if (nRow < 0 || nRow >= BOARD_SIZE || nCol < 0 || nCol >= BOARD_SIZE) {
+        valid = false;
+        break;
+      }
+      const nIdx = nRow * BOARD_SIZE + nCol;
+      const nTile = board[nIdx];
+      if (!nTile || nTile.color !== activeType || chain.includes(nIdx)) {
+        valid = false;
+        break;
+      }
+      toAdd.push(nIdx);
+      curr = nIdx;
+    }
+
+    if (valid && toAdd.length > 0) {
+      if (!chainDirectionRef.current) {
+        chainDirectionRef.current = stepDir;
+      }
+      chain.push(...toAdd);
+      setSelected([...chain]);
+      play('link', Math.min(3, chain.length / 2));
+    }
   }, [activeBooster, activeType, board, play]);
 
   const applyBooster = (kind: BoosterKind, index: number) => {
@@ -970,48 +1100,35 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
   const onTilePointerDown = (index: number, event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     soundRef.current?.unlock();
-    if (activeBooster) {
-      applyBooster(activeBooster, index);
-      return;
-    }
-    if (busyRef.current || !board[index]) return;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    chainRef.current = [index];
-    chainDirectionRef.current = null;
-    setSelected([index]);
-    setActiveType(board[index].color);
-    setDragging(true);
-    play('wake');
+    startDragAt(index);
   };
 
-  const onGlobalPointerMove = useCallback((event: globalThis.PointerEvent) => {
-    if (!dragging || activeBooster) return;
-    let index: number | undefined;
-    const grid = boardRef.current?.querySelector('.board');
-    const rect = grid?.getBoundingClientRect();
-    if (rect && rect.width > 0 && rect.height > 0) {
-      if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) {
-        const col = Math.floor(((event.clientX - rect.left) / rect.width) * BOARD_SIZE);
-        const row = Math.floor(((event.clientY - rect.top) / rect.height) * BOARD_SIZE);
-        index = Math.max(0, Math.min(BOARD_SIZE * BOARD_SIZE - 1, row * BOARD_SIZE + col));
-      }
-    }
-    if (index !== undefined) addToChain(index);
-  }, [dragging, activeBooster, addToChain]);
-
   useEffect(() => {
-    const release = () => {
-      if (dragging) finishTurn(chainRef.current);
+    if (!dragging) return;
+
+    const onPointerMove = (e: globalThis.PointerEvent) => {
+      e.preventDefault();
+      const idx = getIndexFromPoint(e.clientX, e.clientY);
+      if (idx !== null) {
+        addToChain(idx);
+      }
     };
-    if (dragging) {
-      window.addEventListener('pointermove', onGlobalPointerMove);
-      window.addEventListener('pointerup', release);
-    }
+
+    const onPointerEnd = () => {
+      setDragging(false);
+      finishTurn(chainRef.current);
+    };
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerEnd);
+    window.addEventListener('pointercancel', onPointerEnd);
+
     return () => {
-      window.removeEventListener('pointermove', onGlobalPointerMove);
-      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerEnd);
+      window.removeEventListener('pointercancel', onPointerEnd);
     };
-  }, [dragging, finishTurn, onGlobalPointerMove]);
+  }, [dragging, finishTurn, addToChain, getIndexFromPoint]);
 
   useEffect(() => {
     if (score < config.targetScore || completionSentRef.current || overlay) return;
@@ -1033,23 +1150,59 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
   return (
     <div className="screen game-shell">
       <div className="world-bg" style={{ backgroundImage: `url(${ASSET}${backgrounds[Math.min(backgrounds.length - 1, Math.floor((levelNumber - 1) / 10))]})`, opacity: .28 }} />
+      <FloatingClouds />
       <Topbar onBack={onBack} onSettings={onSettings} label={config.world.toUpperCase()} />
       <main className="game-content">
         <section className="level-heading"><div><h1>Level {levelNumber} <span className="text-cyan-200">·</span> {config.title}</h1><p>{activeBooster ? `Choose a cell for your ${activeBooster}` : config.lesson}</p></div><button className="pause-btn" onClick={() => { clearActiveChain(); setActiveBooster(null); setOverlay('pause'); }} aria-label="Pause game"><Pause size={18} fill="currentColor" /></button></section>
-        <section className="stats-row flex justify-center items-center py-4 relative">
-          <div className="absolute left-6 text-white text-[10px] text-opacity-50 tracking-widest uppercase">Target</div>
-          <div className="flex-1 max-w-[200px] mx-auto relative h-[14px] bg-black/40 rounded-full border border-white/10 shadow-inner">
-             <i className="absolute left-0 top-0 h-full bg-gradient-to-r from-cyan-400 to-yellow-300 rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }} />
-             <span className={stars >= 1 ? 'absolute -top-[5px] ml-[-10px] text-yellow-300 drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'absolute -top-[5px] ml-[-10px] text-white/30'} style={{ left: '33%' }}><Star size={24} fill="currentColor" /></span>
-             <span className={stars >= 2 ? 'absolute -top-[5px] ml-[-10px] text-yellow-300 drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'absolute -top-[5px] ml-[-10px] text-white/30'} style={{ left: '66%' }}><Star size={24} fill="currentColor" /></span>
-             <span className={stars >= 3 ? 'absolute -top-[5px] ml-[-10px] text-yellow-300 drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'absolute -top-[5px] ml-[-10px] text-white/30'} style={{ left: '100%' }}><Star size={24} fill="currentColor" /></span>
+        <section className="stats-row flex justify-between items-center py-2 px-3 relative w-full max-w-[480px] mx-auto gap-3">
+          <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+            <div className="flex justify-between items-center px-1">
+              <span className="text-[11px] font-extrabold uppercase tracking-widest text-cyan-200 flex items-center gap-1.5 drop-shadow-[0_0_8px_rgba(0,240,255,0.6)]">
+                <Sparkles size={13} className="text-yellow-300" />
+                Target Glow
+              </span>
+              <span className="text-[12px] font-black tracking-tight text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]">
+                {Math.min(100, Math.floor(progressPercent))}%
+              </span>
+            </div>
+
+            {/* Glowing animated progress track (no stars) */}
+            <div className="relative h-[18px] w-full bg-[#0a0320]/80 rounded-full border border-cyan-400/40 p-[2px] shadow-[0_0_14px_rgba(0,229,255,0.25),inset_0_2px_4px_rgba(0,0,0,0.6)] overflow-hidden backdrop-blur-md">
+              <div 
+                className="h-full rounded-full relative transition-all duration-300 ease-out overflow-hidden"
+                style={{ 
+                  width: `${Math.max(4, Math.min(100, progressPercent))}%`,
+                  background: progressPercent >= 100 
+                    ? 'linear-gradient(90deg, #ffe066, #ff70a6, #ff007f, #70d6ff)' 
+                    : 'linear-gradient(90deg, #00f2fe 0%, #4facfe 35%, #00f0ff 70%, #ffe259 100%)',
+                  boxShadow: '0 0 14px rgba(0, 240, 255, 0.75), inset 0 1px 1px rgba(255,255,255,0.6)'
+                }}
+              >
+                <div className="progress-shimmer-sweep" />
+                {progressPercent > 5 && (
+                  <div className="absolute right-0 top-0 bottom-0 w-2 bg-white rounded-full blur-[0.5px] shadow-[0_0_8px_#fff,0_0_12px_#00f0ff]" />
+                )}
+              </div>
+            </div>
           </div>
-          <div className="moves-display absolute right-6 flex flex-col items-center justify-center w-[54px] h-[54px] rounded-full border-[3px] border-cyan-300 bg-[#12053c] shadow-[0_0_15px_rgba(0,240,255,0.3)] z-10">
-            <span className="text-[8px] font-bold text-cyan-200 mt-1 uppercase tracking-widest">Moves</span>
-            <span className="text-[22px] font-black text-white leading-none tracking-tighter mb-1 drop-shadow-md">{moves}</span>
+
+          {/* Moves Display */}
+          <div className="moves-display flex-shrink-0 flex flex-col items-center justify-center w-[54px] h-[54px] rounded-full border-[3px] border-cyan-300 bg-gradient-to-b from-[#210959] to-[#0f042d] shadow-[0_0_16px_rgba(0,240,255,0.4),inset_0_2px_4px_rgba(255,255,255,0.2)]">
+            <span className="text-[8px] font-extrabold text-cyan-200 mt-1 uppercase tracking-wider">Moves</span>
+            <span className="text-[22px] font-black text-white leading-none tracking-tighter mb-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">{moves}</span>
           </div>
         </section>
-        <section className={`board-wrap ${dragging ? 'is-linking' : ''} ${effect ? `effect-${effect}` : ''}`} ref={boardRef}>
+        <section 
+          className={`board-wrap ${dragging ? 'is-linking' : ''} ${effect ? `effect-${effect}` : ''}`} 
+          ref={boardRef}
+          onPointerDown={(event) => {
+            soundRef.current?.unlock();
+            const idx = getIndexFromPoint(event.clientX, event.clientY);
+            if (idx !== null) {
+              startDragAt(idx);
+            }
+          }}
+        >
           <div className="board">
             {board.map((tile, index) => <LumenTile key={`${tile.id}-${index}`} tile={tile} index={index} selected={selected.includes(index)} popping={popping.includes(index)} fresh={freshTiles.includes(index)} onPointerDown={(event) => onTilePointerDown(index, event)} />)}
           </div>
