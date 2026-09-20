@@ -83,14 +83,22 @@ const writeProgress = (progress: SavedProgress) => {
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
+function createLevelPRNG(seed: number) {
+  let s = (seed * 1664525 + 1013904223) >>> 0;
+  return function next() {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
 const levelConfig = (level: number) => {
   const biomeIndex = Math.floor((level - 1) / 10);
   return {
     level,
-    targetScore: Math.min(20000, 1200 + (level - 1) * 450),
-    moves: Math.max(12, Math.min(22, 16 + Math.floor((level - 1) / 5))),
+    targetScore: Math.min(15000, 800 + (level - 1) * 250),
+    moves: Math.max(16, Math.min(24, 18 + Math.floor((level - 1) / 3))),
     world: level < 11 ? 'Starlight Meadows' : level < 26 ? 'Crystal Valley' : 'Twilight Grove',
-    title: level < 11 ? 'First Glow' : level < 26 ? 'Crystal Drift' : 'Moonlit Bloom',
+    title: level < 11 ? `First Glow ${level}` : level < 26 ? `Crystal Drift ${level}` : `Moonlit Bloom ${level}`,
     lesson: level <= 2 ? 'Make an easy 3-link to wake the meadow' : level <= 5 ? 'Longer chains charge brighter rewards' : 'Find the clearest line through the glow',
     canSpawnVortex: true,
   };
@@ -135,6 +143,31 @@ const hasPlayableChain = (board: (Tile | null)[]) => {
   return false;
 };
 
+const countPlayableChains = (board: (Tile | null)[]) => {
+  let count = 0;
+  for (let start = 0; start < board.length; start += 1) {
+    const tile = board[start];
+    if (!tile) continue;
+    for (const direction of lineDirections) {
+      let length = 1;
+      let row = rowOf(start) + direction.row;
+      let col = colOf(start) + direction.col;
+      while (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE) {
+        const next = row * BOARD_SIZE + col;
+        if (board[next]?.color !== tile.color) break;
+        length += 1;
+        if (length === 3) {
+          count += 1;
+          break;
+        }
+        row += direction.row;
+        col += direction.col;
+      }
+    }
+  }
+  return count;
+};
+
 const installGuaranteedLine = (board: Tile[], color: LumenColor = 'solar') => {
   const isRow = Math.random() < 0.5;
   if (isRow) {
@@ -158,38 +191,48 @@ const getRandomClusterLength = () => {
   return Math.random() < 0.85 ? 3 : 4;
 };
 
-const makeBoard = (level = 1): Tile[] => {
+const makeBoard = (level = 1, prng?: () => number): Tile[] => {
+  const rng = prng ?? createLevelPRNG(level * 7919 + 104729);
   const board: Tile[] = Array(BOARD_SIZE * BOARD_SIZE).fill(null);
   const colorBag: LumenColor[] = [];
-  let vortexSpawned = false;
-  
+
   for (let i = 0; i < BOARD_SIZE * BOARD_SIZE; i++) {
     if (colorBag.length === 0) {
-      const len = getRandomClusterLength();
-      const color = randomColor();
+      const len = rng() < 0.85 ? 3 : 4;
+      const color = colors[Math.floor(rng() * colors.length)];
       for (let j = 0; j < len; j++) colorBag.push(color);
     }
-    const isFusion = false;
-    if (isFusion) {
-      board[i] = { id: freshTileId(), color: 'cosmic', fusion: true };
-      vortexSpawned = true;
-    } else {
-      board[i] = { id: freshTileId(), color: colorBag.shift()! };
+    board[i] = { id: freshTileId(), color: colorBag.shift()! };
+  }
+
+  // Ensure deterministic starting playability: at least 3 distinct line options
+  let attempts = 0;
+  while (countPlayableChains(board) < 3 && attempts < 10) {
+    attempts++;
+    const col = colors[Math.floor(rng() * colors.length)];
+    installGuaranteedLine(board, col);
+  }
+
+  // Guarantee an early 4-link opportunity on intro levels so players can trigger a beam
+  if (level <= 2) {
+    const beamColor = colors[Math.floor(rng() * colors.length)];
+    const row = Math.floor(rng() * BOARD_SIZE);
+    const colStart = Math.floor(rng() * (BOARD_SIZE - 3));
+    for (let i = 0; i < 4; i++) {
+      board[row * BOARD_SIZE + colStart + i] = { id: freshTileId(), color: beamColor };
     }
   }
 
-  if (!hasPlayableChain(board)) {
-    installGuaranteedLine(board, randomColor());
-  }
   return board;
 };
 
-const collapseBoard = (board: (Tile | null)[], level = 1) => {
+const collapseBoard = (board: (Tile | null)[], level = 1, prng?: () => number) => {
+  const rng = prng ?? Math.random;
   const next: (Tile | null)[] = Array(BOARD_SIZE * BOARD_SIZE).fill(null);
   const refilled: number[] = [];
   const colorBag: LumenColor[] = [];
   let vortexSpawned = false;
-  
+
   for (let col = 0; col < BOARD_SIZE; col += 1) {
     const survivors: Tile[] = [];
     for (let row = BOARD_SIZE - 1; row >= 0; row -= 1) {
@@ -200,11 +243,11 @@ const collapseBoard = (board: (Tile | null)[], level = 1) => {
       if (survivors[i]) next[row * BOARD_SIZE + col] = survivors[i];
       else {
         if (colorBag.length === 0) {
-          const len = getRandomClusterLength();
-          const color = randomColor();
+          const len = rng() < 0.85 ? 3 : 4;
+          const color = colors[Math.floor(rng() * colors.length)];
           for (let j = 0; j < len; j++) colorBag.push(color);
         }
-        const isFusion = !vortexSpawned && Math.random() < 0.03;
+        const isFusion = !vortexSpawned && rng() < 0.03;
         if (isFusion) {
           next[row * BOARD_SIZE + col] = { id: freshTileId(), color: 'cosmic', fusion: true };
           vortexSpawned = true;
@@ -217,7 +260,8 @@ const collapseBoard = (board: (Tile | null)[], level = 1) => {
   }
 
   if (!hasPlayableChain(next)) {
-    installGuaranteedLine(next as Tile[], randomColor());
+    const col = colors[Math.floor(rng() * colors.length)];
+    installGuaranteedLine(next as Tile[], col);
   }
   return { board: next as Tile[], refilled };
 };
@@ -618,7 +662,8 @@ function Booster({ kind, onClick, disabled }: { kind: BoosterKind; onClick: () =
 
 function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onCoinsChange, onNextLevel }: { levelNumber: number; progress: SavedProgress; onBack: () => void; onSettings: () => void; onComplete: (score: number, stars: number) => void; onCoinsChange: (coins: number) => void; onNextLevel: () => void }) {
   const config = useMemo(() => levelConfig(levelNumber), [levelNumber]);
-  const [board, setBoard] = useState<Tile[]>(() => makeBoard(levelNumber));
+  const rngRef = useRef<() => number>(createLevelPRNG(levelNumber * 7919 + 104729));
+  const [board, setBoard] = useState<Tile[]>(() => makeBoard(levelNumber, rngRef.current));
   const [selected, setSelected] = useState<number[]>([]);
   const [popping, setPopping] = useState<number[]>([]);
   const [freshTiles, setFreshTiles] = useState<number[]>([]);
@@ -775,7 +820,7 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     window.setTimeout(() => {
       setBoard((current) => {
         const afterClear = current.map((t, i) => uniqueIndices.includes(i) ? null : t);
-        const result = collapseBoard(afterClear, levelNumber);
+        const result = collapseBoard(afterClear, levelNumber, rngRef.current);
         setFreshTiles(result.refilled);
         if (freshTimerRef.current) window.clearTimeout(freshTimerRef.current);
         freshTimerRef.current = window.setTimeout(() => setFreshTiles([]), 720);
@@ -809,7 +854,7 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     window.setTimeout(() => {
       setBoard((current) => {
         const cleared = current.map((tile, index) => uniqueIndices.includes(index) ? null : tile);
-        const result = collapseBoard(cleared, levelNumber);
+        const result = collapseBoard(cleared, levelNumber, rngRef.current);
         setFreshTiles(result.refilled);
         if (freshTimerRef.current) window.clearTimeout(freshTimerRef.current);
         freshTimerRef.current = window.setTimeout(() => setFreshTiles([]), 720);
@@ -1083,10 +1128,11 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
   };
 
   const resetGame = () => {
+    rngRef.current = createLevelPRNG(levelNumber * 7919 + 104729);
     busyRef.current = false;
     completionSentRef.current = false;
     clearActiveChain();
-    setBoard(makeBoard(levelNumber));
+    setBoard(makeBoard(levelNumber, rngRef.current));
     setSelected([]);
     setPopping([]);
     setFreshTiles([]);
