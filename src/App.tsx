@@ -87,8 +87,8 @@ const levelConfig = (level: number) => {
   const biomeIndex = Math.floor((level - 1) / 10);
   return {
     level,
-    targetScore: Math.min(7500, 800 + biomeIndex * 800 + ((level - 1) % 10) * 250),
-    moves: Math.min(350, 18 + biomeIndex * 12 + ((level - 1) % 10) * 2),
+    targetScore: Math.min(20000, 1200 + (level - 1) * 450),
+    moves: Math.max(12, Math.min(22, 16 + Math.floor((level - 1) / 5))),
     world: level < 11 ? 'Starlight Meadows' : level < 26 ? 'Crystal Valley' : 'Twilight Grove',
     title: level < 11 ? 'First Glow' : level < 26 ? 'Crystal Drift' : 'Moonlit Bloom',
     lesson: level <= 2 ? 'Make an easy 3-link to wake the meadow' : level <= 5 ? 'Longer chains charge brighter rewards' : 'Find the clearest line through the glow',
@@ -169,7 +169,7 @@ const makeBoard = (level = 1): Tile[] => {
       const color = randomColor();
       for (let j = 0; j < len; j++) colorBag.push(color);
     }
-    const isFusion = !vortexSpawned && Math.random() < 0.05;
+    const isFusion = false;
     if (isFusion) {
       board[i] = { id: freshTileId(), color: 'cosmic', fusion: true };
       vortexSpawned = true;
@@ -204,7 +204,7 @@ const collapseBoard = (board: (Tile | null)[], level = 1) => {
           const color = randomColor();
           for (let j = 0; j < len; j++) colorBag.push(color);
         }
-        const isFusion = !vortexSpawned && Math.random() < 0.05;
+        const isFusion = !vortexSpawned && Math.random() < 0.03;
         if (isFusion) {
           next[row * BOARD_SIZE + col] = { id: freshTileId(), color: 'cosmic', fusion: true };
           vortexSpawned = true;
@@ -472,51 +472,64 @@ function MapNode({ level, left, top, locked, current, stars, onClick }: { level:
 
 function HomeScreen({ progress, onGame, onSettings, onGift }: { progress: SavedProgress; onGame: (level?: number) => void; onSettings: () => void; onGift: () => boolean }) {
   const latest = progress.highestUnlocked;
-  const mapLevels = Array.from({ length: Math.max(10, Math.min(16, latest + 3)) }, (_, index) => index + 1);
+  const mapLevels = Array.from({ length: Math.max(10, Math.min(50, latest + 6)) }, (_, index) => index + 1);
   const mapRows = Math.ceil(mapLevels.length / 4);
   const mapPosition = (level: number) => {
     const row = Math.floor((level - 1) / 4);
     const slot = (level - 1) % 4;
     const order = row % 2 === 0 ? slot : 3 - slot;
-    return { left: `${14 + order * 24}%`, top: `${10 + row * (78 / Math.max(1, mapRows - 1))}%` };
+    return { left: `${16 + order * 22.6}%`, top: `${40 + row * 110}px` };
   };
+  
   const pathPoints = mapLevels.map((level) => {
     const position = mapPosition(level);
-    return `${parseFloat(position.left) * 4},${parseFloat(position.top) * 3.3}`;
+    return `${parseFloat(position.left) * 4},${parseFloat(position.top)}`;
   }).join(' ');
+  
   const [notice, setNotice] = useState('');
   const giftClaimed = progress.dailyGiftClaimedOn === todayKey();
   const showNotice = (message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(''), 2200);
   };
+  
+  // Make the map scene tall enough to scroll
+  const sceneHeight = Math.max(400, mapRows * 110 + 100);
+
   return (
-    <div className="screen game-shell">
-      <div className="world-bg" style={{ backgroundImage: `url(${ASSET}${backgrounds[0]})` }} />
-      <Topbar onSettings={onSettings} />
-      <main className="home-content stagger">
-        <section className="welcome-card">
-          <div><p className="eyebrow">The first spark</p><h1>Good morning,<br /><span className="text-cyan-200">stargazer.</span></h1><p>The Lumens are humming your name.</p></div>
+    <div className="screen game-shell" style={{ overflow: 'hidden' }}>
+      <div className="world-bg" style={{ backgroundImage: `url(${ASSET}${backgrounds[Math.floor((latest - 1) / 10) % backgrounds.length]})`, opacity: 0.3 }} />
+      <main className="home-content" style={{ overflowY: 'auto', display: 'block', paddingBottom: '120px' }}>
+        <div className="welcome-card pb-6">
+          <div><span className="eyebrow">THE FIRST SPARK</span><h1>Good morning,<br />stargazer.</h1><p>The Lumens are humming your name.</p></div>
           <div className="energy-pill"><span className="energy-core" /> {progress.coins.toLocaleString()}</div>
-        </section>
-        <section className="map-card" aria-label="Level map">
-          <div className="map-scene" style={{ minHeight: `${Math.max(100, mapRows * 25)}%` }}>
-            <svg className="map-path" viewBox="0 0 400 330" preserveAspectRatio="none" aria-hidden="true"><polyline points={pathPoints} fill="none" stroke="rgba(255,242,154,.6)" strokeWidth="3" strokeDasharray="6 8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </div>
+        
+        <div className="map-card" style={{ height: `${sceneHeight}px`, overflow: 'hidden', minHeight: '400px' }}>
+          <div className="map-scene" style={{ height: '100%' }}>
+            <svg className="map-path" viewBox={`0 0 400 ${sceneHeight}`} preserveAspectRatio="none">
+              <polyline points={pathPoints} fill="none" stroke="rgba(255, 255, 255, 0.15)" strokeWidth="4" strokeDasharray="8 6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
             {mapLevels.map((level) => {
-              const position = mapPosition(level);
-              const unlocked = level <= progress.highestUnlocked;
-              return <MapNode key={level} level={level} left={position.left} top={position.top} locked={!unlocked} current={level === latest} stars={progress.completed[level]?.stars} onClick={() => unlocked ? onGame(level) : showNotice('Complete the previous glow to unlock this level')} />;
+              const unlocked = level <= latest;
+              return (
+                <button key={level} className={`map-node ${unlocked ? (level === latest ? 'current' : 'unlocked') : 'locked'}`} style={mapPosition(level)} onClick={() => unlocked ? onGame(level) : showNotice('Clear earlier levels to reach this meadow')} aria-label={unlocked ? `Play Level ${level}` : `Level ${level} Locked`}>
+                  <div className="node-orb">{unlocked ? level : <Lock size={18} />}</div>
+                  <div className="node-label">{unlocked ? (level === latest ? 'Up Next' : `${progress.completed[level]?.stars ?? 0} stars`) : 'Locked'}</div>
+                </button>
+              );
             })}
           </div>
-        </section>
-        <div className="home-actions">
-          <button className="btn-primary wide-action" onClick={() => onGame(latest)}><Sparkles size={18} /> Continue to Level {latest} <ChevronRight size={18} /></button>
-          <button className="glass btn-ghost flex items-center justify-center gap-2" onClick={() => showNotice(onGift() ? '250 shards added to your pocket' : 'Your daily gift is already claimed')}><Gift size={17} /> {giftClaimed ? 'Gift claimed' : 'Daily gift'}</button>
-          <button className="glass btn-ghost flex items-center justify-center gap-2" onClick={onSettings}><SettingsIcon size={17} /> Settings</button>
         </div>
-        <section className="glass mini-panel"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-yellow-300/20 text-yellow-200"><Crown size={20} /></div><div><strong>Star trail</strong><span className="block">Complete a level to fill your constellation</span></div></div><span>{Object.keys(progress.completed).length} lit</span></section>
+        
+        <button className="btn-primary flex items-center justify-center gap-2 mt-6" onClick={() => onGame()}><Sparkles size={18} className="text-yellow-100" /> Continue to Level {latest} <ChevronRight size={18} /></button>
+        <div className="flex gap-4 mt-4">
+          <button className={`btn-ghost flex-1 flex items-center justify-center gap-2 ${giftClaimed ? 'opacity-50' : ''}`} onClick={() => { if (onGift()) showNotice('250 shards claimed! Come back tomorrow.'); else showNotice('You already claimed your gift today.'); }}><Gift size={18} /> {giftClaimed ? 'Gift claimed' : 'Daily gift'}</button>
+          <button className="btn-ghost flex-1 flex items-center justify-center gap-2" onClick={onSettings}><SettingsIcon size={18} /> Settings</button>
+        </div>
+        <div className="collection-bar mt-4"><div className="collection-icon"><Crown size={20} className="text-yellow-200" /></div><div className="collection-copy"><b>Star trail</b><span>Complete a level to fill your constellation</span></div><span className="collection-count">{Object.values(progress.completed).reduce((a, b) => a + b.stars, 0)} lit</span></div>
       </main>
-      {notice && <div className="game-toast" role="status">{notice}</div>}
+      {notice && <div className="game-toast">{notice}</div>}
     </div>
   );
 }
@@ -627,44 +640,6 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     setActiveType(null);
   }, []);
 
-  const findAutoMatches = (boardState: (Tile | null)[]) => {
-    const matchGroups: number[][] = [];
-    const matched = new Set<number>();
-    
-    for (let row = 0; row < BOARD_SIZE; row++) {
-      for (let col = 0; col < BOARD_SIZE - 2; col++) {
-        const i = row * BOARD_SIZE + col;
-        if (!boardState[i] || boardState[i]?.fusion || boardState[i]?.special) continue;
-        const color = boardState[i]!.color;
-        let len = 1;
-        while (col + len < BOARD_SIZE && boardState[i + len]?.color === color && !boardState[i + len]?.fusion && !boardState[i + len]?.special) len++;
-        if (len >= 3) {
-          const group = [];
-          for (let j = 0; j < len; j++) { group.push(i + j); matched.add(i + j); }
-          matchGroups.push(group);
-          col += len - 1;
-        }
-      }
-    }
-    
-    for (let col = 0; col < BOARD_SIZE; col++) {
-      for (let row = 0; row < BOARD_SIZE - 2; row++) {
-        const i = row * BOARD_SIZE + col;
-        if (!boardState[i] || boardState[i]?.fusion || boardState[i]?.special) continue;
-        const color = boardState[i]!.color;
-        let len = 1;
-        while (row + len < BOARD_SIZE && boardState[i + len * BOARD_SIZE]?.color === color && !boardState[i + len * BOARD_SIZE]?.fusion && !boardState[i + len * BOARD_SIZE]?.special) len++;
-        if (len >= 3) {
-          const group = [];
-          for (let j = 0; j < len; j++) { group.push(i + j * BOARD_SIZE); matched.add(i + j * BOARD_SIZE); }
-          matchGroups.push(group);
-          row += len - 1;
-        }
-      }
-    }
-    
-    return { unique: Array.from(matched), groups: matchGroups };
-  };
 
   const surgeTickRef = useRef(false);
 
@@ -710,52 +685,6 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     
   }, [moves, score, onComplete, play, starsForScore]);
 
-  const scheduleCascade = useCallback((boardState: Tile[], scoreAcc: number, multiplier: number, isSurge = false) => {
-    const { unique, groups } = findAutoMatches(boardState);
-    if (unique.length === 0) {
-      setBoard(boardState);
-      setScore(current => current + scoreAcc);
-      window.setTimeout(() => { busyRef.current = false; }, 100);
-      
-      if (isSurge || (score + scoreAcc >= config.targetScore && moves > 0)) {
-         surgeTickRef.current = true;
-         startLumenSurge(boardState, 0);
-      } else if (!isSurge && score + scoreAcc >= config.targetScore && moves <= 0 && !completionSentRef.current) {
-         completionSentRef.current = true;
-         window.setTimeout(() => {
-           play('win');
-           setOverlay('complete');
-           onComplete(score + scoreAcc, starsForScore(score + scoreAcc));
-         }, 760);
-      } else if (!isSurge && score + scoreAcc < config.targetScore && moves <= 0) {
-         window.setTimeout(() => {
-           play('lose');
-           setOverlay('fail');
-         }, 820);
-      }
-      return;
-    }
-    
-    setPopping(unique);
-    setBoard(boardState);
-    play('pop', 2);
-    
-    let cascadeScore = 0;
-    groups.forEach((g: number[]) => { cascadeScore += scoreForChain(g.length) * multiplier; });
-
-    window.setTimeout(() => {
-      const cleared = boardState.map((t, i) => unique.includes(i) ? null : t);
-      const result = collapseBoard(cleared, levelNumber);
-      setBoard(result.board);
-      setFreshTiles(result.refilled);
-      setPopping([]);
-      play('gravity', 1);
-      
-      window.setTimeout(() => {
-        scheduleCascade(result.board, scoreAcc + cascadeScore, multiplier === 1.5 ? 2.0 : 3.0, isSurge);
-      }, 350);
-    }, 400);
-  }, [levelNumber, play, scoreForChain, score, config.targetScore, moves, startLumenSurge, onComplete, starsForScore]);
 
   const activateVortex = useCallback((index: number, chainColor: LumenColor, isSurge = false, currentBoard = board, scoreAcc = 0) => {
     if (busyRef.current && !isSurge) return;
@@ -763,7 +692,9 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     
     const tile = currentBoard[index];
     if (!tile) {
-      scheduleCascade(currentBoard as Tile[], scoreAcc, 1.5, isSurge);
+      setBoard(currentBoard);
+      setScore(current => current + scoreAcc);
+      window.setTimeout(() => { busyRef.current = false; }, 100);
       return;
     }
     
@@ -820,17 +751,22 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
         freshTimerRef.current = window.setTimeout(() => setFreshTiles([]), 720);
         play('gravity', Math.min(2, result.refilled.length / 5));
         
-        window.setTimeout(() => {
-          scheduleCascade(result.board, scoreAcc + uniqueIndices.length * 10, 1.5, isSurge);
-        }, 400);
-        
         return result.board;
       });
       setPopping([]);
-    }, 460);
-  }, [board, clearActiveChain, showToast, play, scheduleCascade, levelNumber]);
+      setScore(current => current + scoreAcc + uniqueIndices.length * 10);
+      
+      window.setTimeout(() => {
+        busyRef.current = false;
+        if (isSurge) {
+           startLumenSurge(board, 0); // Trigger next surge tick
+        }
+      }, 400);
 
-  const performRemoval = useCallback((indices: number[], chainColor: LumenColor, bonus = 0, mode: 'pop' | 'vortex' | 'booster' = 'pop', specialToInject?: { index: number, special?: Tile['special'], fusion?: boolean }) => {
+    }, 460);
+  }, [board, clearActiveChain, showToast, play, levelNumber, startLumenSurge]);
+
+  const performRemoval = useCallback((indices: number[], chainColor: LumenColor, bonus = 0, mode: 'pop' | 'vortex' | 'booster' = 'pop') => {
     if (busyRef.current) return;
     busyRef.current = true;
     const uniqueIndices = [...new Set(indices)];
@@ -843,66 +779,102 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
     window.setTimeout(() => {
       setBoard((current) => {
         const cleared = current.map((tile, index) => uniqueIndices.includes(index) ? null : tile);
-        if (specialToInject) {
-          cleared[specialToInject.index] = { 
-            id: freshTileId(), 
-            color: specialToInject.fusion ? 'cosmic' : chainColor, 
-            special: specialToInject.special,
-            fusion: specialToInject.fusion 
-          };
-        }
         const result = collapseBoard(cleared, levelNumber);
         setFreshTiles(result.refilled);
         if (freshTimerRef.current) window.clearTimeout(freshTimerRef.current);
         freshTimerRef.current = window.setTimeout(() => setFreshTiles([]), 720);
         play('gravity', Math.min(2, result.refilled.length / 5));
         
-        window.setTimeout(() => {
-          scheduleCascade(result.board, bonus, 1.5);
-        }, 400);
-        
         return result.board;
       });
       setPopping([]);
+      setScore(current => current + bonus);
+      
+      window.setTimeout(() => {
+        busyRef.current = false;
+        
+        // check win/loss after gravity settles
+        setScore(currentScore => {
+          if (currentScore >= config.targetScore && moves > 0) {
+            startLumenSurge(board, 0); // Need to pass the latest board somehow, but startLumenSurge handles it
+          } else if (currentScore >= config.targetScore && moves <= 0 && !completionSentRef.current) {
+            completionSentRef.current = true;
+            window.setTimeout(() => {
+              play('win');
+              setOverlay('complete');
+              onComplete(currentScore, starsForScore(currentScore));
+            }, 760);
+          } else if (currentScore < config.targetScore && moves <= 0) {
+            window.setTimeout(() => {
+              play('lose');
+              setOverlay('fail');
+            }, 820);
+          }
+          return currentScore;
+        });
+
+      }, 400);
+
     }, mode === 'vortex' ? 460 : 300);
-  }, [levelNumber, play, scheduleCascade]);
+  }, [levelNumber, play, moves, config.targetScore, startLumenSurge, onComplete, starsForScore]);
 
   const finishTurn = useCallback((chain: number[]) => {
     if (busyRef.current) return;
+    
+    // Check if the user touched a vortex directly
     const specialIndex = chain.find((index) => board[index]?.fusion || board[index]?.special);
     if (specialIndex !== undefined) {
       activateVortex(specialIndex, board[specialIndex]?.color ?? 'cosmic');
       return;
     }
+    
     if (chain.length < 3) {
       if (chain.length > 0) showToast('Almost there · link one more Lumen');
       play('backtrack');
       clearActiveChain();
       return;
     }
+    
     const chainColor = board[chain[0]].color;
-    let specialToInject: { index: number, special?: Tile['special'], fusion?: boolean } | undefined = undefined;
+    const extra = new Set<number>();
+    const lastTile = chain[chain.length - 1];
+    const centerRow = rowOf(lastTile);
+    const centerCol = colOf(lastTile);
     
     if (chain.length >= 7) {
-      specialToInject = { index: chain[chain.length - 1], fusion: true };
+      // Prism vortex effect: clear all of this color
+      showToast(`7+ Surge · All ${chainColor} Lumens cleared!`);
+      board.forEach((t, i) => { if (t?.color === chainColor) extra.add(i); });
     } else if (chain.length === 6) {
-      specialToInject = { index: chain[chain.length - 1], special: 'cross' };
+      // Cross beam effect
+      showToast('6-link · Cross Blast!');
+      for (let c = 0; c < BOARD_SIZE; c++) extra.add(centerRow * BOARD_SIZE + c);
+      for (let r = 0; r < BOARD_SIZE; r++) extra.add(r * BOARD_SIZE + centerCol);
     } else if (chain.length === 5) {
-      specialToInject = { index: chain[chain.length - 1], special: 'nova' };
+      // Nova bomb effect: 3x3
+      showToast('5-link · Nova Blast!');
+      board.forEach((t, i) => {
+        if (Math.abs(rowOf(i) - centerRow) <= 1 && Math.abs(colOf(i) - centerCol) <= 1) extra.add(i);
+      });
     } else if (chain.length === 4) {
-      specialToInject = { index: chain[chain.length - 1], special: Math.random() > 0.5 ? 'beam_h' : 'beam_v' };
+      // Beam effect: row or col
+      showToast('4-link · Beam Blast!');
+      const isRow = Math.random() > 0.5;
+      if (isRow) {
+        for (let c = 0; c < BOARD_SIZE; c++) extra.add(centerRow * BOARD_SIZE + c);
+      } else {
+        for (let r = 0; r < BOARD_SIZE; r++) extra.add(r * BOARD_SIZE + centerCol);
+      }
     }
 
-    const gained = scoreForChain(chain.length);
+    const gained = scoreForChain(chain.length) + extra.size * 10;
     setMoves((current) => Math.max(0, current - 1));
     
-    if (chain.length >= 7) showToast(`7-Lumen surge · Prism Vortex created!`);
-    else if (chain.length === 6) showToast('6-link · Cross Beam created!');
-    else if (chain.length === 5) showToast('5-link · Nova Bomb created!');
-    else if (chain.length === 4) showToast('4-link · Beam Lumen created!');
-    
     play('link', Math.min(3, chain.length / 2));
-    performRemoval([...chain], chainColor, gained, 'pop', specialToInject);
+    
+    const allToClear = [...chain, ...Array.from(extra)];
+    performRemoval(allToClear, chainColor, gained, extra.size > 0 ? 'vortex' : 'pop');
+    
     clearActiveChain();
   }, [activateVortex, board, clearActiveChain, moves, play, scoreForChain, showToast, performRemoval]);
 
