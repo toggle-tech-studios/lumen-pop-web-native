@@ -38,8 +38,8 @@ export function UsernameScreen({
       setError('Username must be at least 3 characters');
       return;
     }
-    if (!/^[a-zA-Z0-9_]+$/.test(clean)) {
-      setError('Only letters, numbers, and underscores allowed');
+    if (!/^[a-z0-9_\-\.]+$/.test(clean)) {
+      setError('Only lowercase letters, numbers, and - _ . allowed');
       return;
     }
     
@@ -48,15 +48,6 @@ export function UsernameScreen({
     
     const lower = clean.toLowerCase();
     let isTaken = false;
-
-    // Check localStorage cache
-    try {
-      if (localStorage.getItem(`lp_user_${lower}`)) {
-        isTaken = true;
-      }
-    } catch {
-      // ignore
-    }
 
     // 1. Check in Cloud Firestore (with 2s timeout)
     if (!isTaken && db) {
@@ -93,12 +84,6 @@ export function UsernameScreen({
       username: clean,
       createdAt: new Date().toISOString()
     };
-
-    try {
-      localStorage.setItem(`lp_user_${lower}`, 'true');
-    } catch {
-      // ignore
-    }
 
     if (db) {
       withTimeout(setDoc(doc(db, 'usernames', lower), payload, { merge: true }), 2000).catch(() => undefined);
