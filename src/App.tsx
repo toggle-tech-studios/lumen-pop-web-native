@@ -102,8 +102,8 @@ const levelConfig = (level: number) => {
   const biomeIndex = Math.floor((level - 1) / 10);
   return {
     level,
-    targetScore: Math.min(15000, 800 + (level - 1) * 250),
-    moves: Math.max(16, Math.min(24, 18 + Math.floor((level - 1) / 3))),
+    targetScore: Math.min(12000, 700 + (level - 1) * 180),
+    moves: Math.max(20, Math.min(30, 20 + Math.floor((level - 1) / 2))),
     world: level < 11 ? 'Starlight Meadows' : level < 26 ? 'Crystal Valley' : 'Twilight Grove',
     title: level < 11 ? `First Glow ${level}` : level < 26 ? `Crystal Drift ${level}` : `Moonlit Bloom ${level}`,
     lesson: level <= 2 ? 'Make an easy 3-link to wake the meadow' : level <= 5 ? 'Longer chains charge brighter rewards' : 'Find the clearest line through the glow',
@@ -576,13 +576,17 @@ function HomeScreen({ progress, onGame, onSettings, onGift }: { progress: SavedP
   // Make the map scene tall enough to scroll
   const sceneHeight = Math.max(400, mapRows * 110 + 100);
 
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const displayName = progress.username || 'stargazer';
+
   return (
     <div className="screen game-shell" style={{ overflow: 'hidden' }}>
       <div className="world-bg" style={{ backgroundImage: `url(${ASSET}${backgrounds[Math.floor((latest - 1) / 10) % backgrounds.length]})`, opacity: 0.3 }} />
       <FloatingClouds />
       <main className="home-content" style={{ overflowY: 'auto', display: 'block', paddingBottom: '120px' }}>
         <div className="welcome-card pt-14 pb-6">
-          <div><span className="eyebrow">THE FIRST SPARK</span><h1>Good morning,<br />stargazer.</h1><p>The Lumens are humming your name.</p></div>
+          <div><span className="eyebrow">THE FIRST SPARK</span><h1>{greeting},<br />{displayName}.</h1><p>The Lumens are humming your name.</p></div>
           <div className="energy-pill"><span className="energy-core" /> {progress.coins.toLocaleString()}</div>
         </div>
         
@@ -608,7 +612,7 @@ function HomeScreen({ progress, onGame, onSettings, onGift }: { progress: SavedP
           <button className={`btn-ghost flex-1 flex items-center justify-center gap-2 ${giftClaimed ? 'opacity-50' : ''}`} onClick={() => { if (onGift()) showNotice('250 shards claimed! Come back tomorrow.'); else showNotice('You already claimed your gift today.'); }}><Gift size={18} /> {giftClaimed ? 'Gift claimed' : 'Daily gift'}</button>
           <button className="btn-ghost flex-1 flex items-center justify-center gap-2" onClick={onSettings}><SettingsIcon size={18} /> Settings</button>
         </div>
-        <div className="collection-bar mt-4"><div className="collection-icon"><Crown size={20} className="text-yellow-200" /></div><div className="collection-copy"><b>Star trail</b><span>Complete a level to fill your constellation</span></div><span className="collection-count">{Object.values(progress.completed).reduce((a, b) => a + b.stars, 0)} lit</span></div>
+        <div className="collection-bar mt-4"><div className="collection-icon"><Crown size={20} className="text-yellow-200" /></div><div className="collection-copy"><b>Star trail</b></div><span className="collection-count">{Object.values(progress.completed).reduce((a, b) => a + b.stars, 0)} lit</span></div>
       </main>
       {notice && <div className="game-toast">{notice}</div>}
     </div>
