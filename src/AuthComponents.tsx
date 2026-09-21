@@ -60,7 +60,12 @@ export function UsernameScreen({
     if (rtdb) {
       try {
         const snapshot = await withTimeout(dbGet(dbRef(rtdb, `usernames/${dbKey}`)), 3000);
-        if (snapshot && snapshot.exists()) {
+        if (snapshot === null) {
+          setError('Network timeout. Please try again.');
+          setLoading(false);
+          return;
+        }
+        if (snapshot.exists()) {
           const val = snapshot.val();
           if (!auth.currentUser || val.ownerUid !== auth.currentUser.uid) {
             isTaken = true;
@@ -68,6 +73,9 @@ export function UsernameScreen({
         }
       } catch (rtdbErr) {
         console.warn('RTDB check note:', rtdbErr);
+        setError('Network error. Please try again.');
+        setLoading(false);
+        return;
       }
     }
 
@@ -98,12 +106,16 @@ export function UsernameScreen({
 
     if (rtdb) {
       try {
-        await withTimeout(dbSet(dbRef(rtdb, `usernames/${dbKey}`), payload), 3000);
+        const setRes = await withTimeout(dbSet(dbRef(rtdb, `usernames/${dbKey}`), payload), 3000);
+        if (setRes === null) throw new Error('Timeout');
         if (auth.currentUser) {
           await withTimeout(dbSet(dbRef(rtdb, `users/${auth.currentUser.uid}/username`), clean), 3000);
         }
       } catch (err) {
         console.warn('Failed to save to RTDB:', err);
+        setError('Could not save username. Please try again.');
+        setLoading(false);
+        return;
       }
     }
 
@@ -176,6 +188,7 @@ export function AuthOverlay({
   coins = 0,
   highestLevel = 1,
   totalStars = 0,
+  completed = {},
   onUserSync
 }: { 
   onClose: () => void;
@@ -183,7 +196,8 @@ export function AuthOverlay({
   coins?: number;
   highestLevel?: number;
   totalStars?: number;
-  onUserSync?: (data: { username: string; coins?: number; highestLevel?: number }) => void;
+  completed?: Record<number, { stars: number; bestScore: number }>;
+  onUserSync?: (data: { username: string; coins?: number; highestLevel?: number, completed?: Record<number, { stars: number; bestScore: number }> }) => void;
 }) {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [mode, setMode] = useState<'menu' | 'email-sign-in' | 'email-sign-up'>('menu');
@@ -206,7 +220,8 @@ export function AuthOverlay({
               onUserSync({
                 username: userData.username,
                 coins: userData.coins,
-                highestLevel: userData.highestLevel
+                highestLevel: userData.highestLevel,
+                completed: userData.completed
               });
             }
           } else if (username) {
@@ -216,6 +231,7 @@ export function AuthOverlay({
               photoURL: u.photoURL || '',
               coins,
               highestLevel,
+              completed,
               lastSeen: new Date().toISOString()
             };
             await dbSet(userRef, payload);
@@ -227,7 +243,7 @@ export function AuthOverlay({
         }
       }
     });
-  }, [username, coins, highestLevel, onUserSync]);
+  }, [username, coins, highestLevel, completed, onUserSync]);
 
   const handleGoogleSignIn = async () => {
     setLoading(true);

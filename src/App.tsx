@@ -23,6 +23,8 @@ import {
   Crosshair,
 } from 'lucide-react';
 import { UsernameScreen, ProfileDP, AuthOverlay } from './AuthComponents';
+import { auth, rtdb } from './firebase';
+import { ref as dbRef, set as dbSet } from 'firebase/database';
 
 type Screen = 'loading' | 'username' | 'start' | 'home' | 'level-loading' | 'game' | 'settings';
 type LumenColor = 'solar' | 'verdant' | 'terra' | 'nova' | 'cosmic' | 'aether' | 'blaze';
@@ -1379,7 +1381,15 @@ function App() {
       setScreen(progress.username ? 'start' : 'username'); 
     }
   }, [ready, progress.username]);
-  const updateProgress = (next: SavedProgress) => { setProgress(next); writeProgress(next); };
+  const updateProgress = (next: SavedProgress) => { 
+    setProgress(next); 
+    writeProgress(next); 
+    if (auth.currentUser && rtdb) {
+      dbSet(dbRef(rtdb, `users/${auth.currentUser.uid}/coins`), next.coins).catch(() => {});
+      dbSet(dbRef(rtdb, `users/${auth.currentUser.uid}/highestLevel`), next.highestUnlocked).catch(() => {});
+      dbSet(dbRef(rtdb, `users/${auth.currentUser.uid}/completed`), next.completed).catch(() => {});
+    }
+  };
   const completeLevel = (score: number, stars: number) => {
     const existing = progress.completed[level];
     const next: SavedProgress = {
@@ -1416,12 +1426,30 @@ function App() {
     setScreen('start');
   };
 
-  const handleUserSync = (userData: { username: string; coins?: number; highestLevel?: number }) => {
+  const handleUserSync = (userData: { username: string; coins?: number; highestLevel?: number; completed?: Record<number, { stars: number; bestScore: number }> }) => {
+    const mergedCompleted = { ...progress.completed };
+    if (userData.completed) {
+      Object.keys(userData.completed).forEach((levelStr) => {
+        const level = parseInt(levelStr, 10);
+        const remoteLevel = userData.completed![level];
+        const localLevel = mergedCompleted[level];
+        if (!localLevel) {
+          mergedCompleted[level] = remoteLevel;
+        } else {
+          mergedCompleted[level] = {
+            stars: Math.max(localLevel.stars, remoteLevel.stars),
+            bestScore: Math.max(localLevel.bestScore, remoteLevel.bestScore)
+          };
+        }
+      });
+    }
+
     const next: SavedProgress = {
       ...progress,
       username: userData.username,
       coins: typeof userData.coins === 'number' ? Math.max(progress.coins, userData.coins) : progress.coins,
-      highestUnlocked: typeof userData.highestLevel === 'number' ? Math.max(progress.highestUnlocked, userData.highestLevel) : progress.highestUnlocked
+      highestUnlocked: typeof userData.highestLevel === 'number' ? Math.max(progress.highestUnlocked, userData.highestLevel) : progress.highestUnlocked,
+      completed: mergedCompleted
     };
     updateProgress(next);
     if (screen === 'username') {
@@ -1456,6 +1484,7 @@ function App() {
           coins={progress.coins}
           highestLevel={progress.highestUnlocked}
           totalStars={Object.values(progress.completed).reduce((sum, item) => sum + item.stars, 0)}
+          completed={progress.completed}
           onUserSync={handleUserSync}
         />
       )}
