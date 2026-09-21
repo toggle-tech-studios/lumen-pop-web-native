@@ -6,6 +6,7 @@ import { getDatabase } from 'firebase/database';
 const firebaseConfig = {
   apiKey: "AIzaSyArHb-auRXi2CYbhiti6hqrRWYZzu6oJNA",
   authDomain: "lumen-pop.firebaseapp.com",
+  databaseURL: "https://lumen-pop-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "lumen-pop",
   storageBucket: "lumen-pop.firebasestorage.app",
   messagingSenderId: "516148988894",

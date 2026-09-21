@@ -12,8 +12,13 @@ import {
 import { auth, db, rtdb, googleProvider, appleProvider } from './firebase';
 import { ChevronRight, User as UserIcon, X, LogOut, Mail, Sparkles, Trophy, Gem, ShieldCheck } from 'lucide-react';
 
+// Helper to format safe keys for Firebase Realtime Database
+export function toDbKey(name: string): string {
+  return encodeURIComponent(name.toLowerCase().trim()).replace(/\./g, '%2E');
+}
+
 // Helper to guarantee network calls never hang indefinitely
-function withTimeout<T>(promise: Promise<T>, ms = 2000): Promise<T | null> {
+function withTimeout<T>(promise: Promise<T>, ms = 3000): Promise<T | null> {
   return Promise.race([
     promise,
     new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))
@@ -23,9 +28,11 @@ function withTimeout<T>(promise: Promise<T>, ms = 2000): Promise<T | null> {
 // --- UsernameScreen ---
 
 export function UsernameScreen({ 
-  onComplete 
+  onComplete,
+  onOpenAuth
 }: { 
-  onComplete: (username: string) => void 
+  onComplete: (username: string) => void;
+  onOpenAuth?: () => void;
 }) {
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
@@ -33,7 +40,7 @@ export function UsernameScreen({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const clean = username.trim();
+    const clean = username.trim().toLowerCase();
     if (!clean || clean.length < 3) {
       setError('Username must be at least 3 characters');
       return;
@@ -46,30 +53,33 @@ export function UsernameScreen({
     setLoading(true);
     setError('');
     
-    const lower = clean.toLowerCase();
+    const dbKey = toDbKey(clean);
     let isTaken = false;
 
-    // 1. Check in Cloud Firestore (with 2s timeout)
+    // 1. Check in Realtime Database
+    if (rtdb) {
+      try {
+        const snapshot = await withTimeout(dbGet(dbRef(rtdb, `usernames/${dbKey}`)), 3000);
+        if (snapshot && snapshot.exists()) {
+          const val = snapshot.val();
+          if (!auth.currentUser || val.ownerUid !== auth.currentUser.uid) {
+            isTaken = true;
+          }
+        }
+      } catch (rtdbErr) {
+        console.warn('RTDB check note:', rtdbErr);
+      }
+    }
+
+    // 2. Check in Cloud Firestore (fallback if enabled)
     if (!isTaken && db) {
       try {
-        const snap = await withTimeout(getDoc(doc(db, 'usernames', lower)), 2000);
+        const snap = await withTimeout(getDoc(doc(db, 'usernames', dbKey)), 2000);
         if (snap && snap.exists()) {
           isTaken = true;
         }
       } catch (fsErr) {
-        console.warn('Firestore check note:', fsErr);
-      }
-    }
-
-    // 2. Check in Realtime Database (with 2s timeout)
-    if (!isTaken && rtdb) {
-      try {
-        const snapshot = await withTimeout(dbGet(dbRef(rtdb, `usernames/${lower}`)), 2000);
-        if (snapshot && snapshot.exists()) {
-          isTaken = true;
-        }
-      } catch (rtdbErr) {
-        console.warn('RTDB check note:', rtdbErr);
+        // Firestore may not be initialized in console
       }
     }
 
@@ -79,18 +89,26 @@ export function UsernameScreen({
       return;
     }
 
-    // Reserve username asynchronously (non-blocking)
+    // Reserve username in Realtime Database and wait for confirmation
     const payload = {
       username: clean,
+      ownerUid: auth.currentUser?.uid || null,
       createdAt: new Date().toISOString()
     };
 
-    if (db) {
-      withTimeout(setDoc(doc(db, 'usernames', lower), payload, { merge: true }), 2000).catch(() => undefined);
+    if (rtdb) {
+      try {
+        await withTimeout(dbSet(dbRef(rtdb, `usernames/${dbKey}`), payload), 3000);
+        if (auth.currentUser) {
+          await withTimeout(dbSet(dbRef(rtdb, `users/${auth.currentUser.uid}/username`), clean), 3000);
+        }
+      } catch (err) {
+        console.warn('Failed to save to RTDB:', err);
+      }
     }
 
-    if (rtdb) {
-      withTimeout(dbSet(dbRef(rtdb, `usernames/${lower}`), payload), 2000).catch(() => undefined);
+    if (db) {
+      withTimeout(setDoc(doc(db, 'usernames', dbKey), payload, { merge: true }), 2000).catch(() => undefined);
     }
 
     setLoading(false);
@@ -115,9 +133,9 @@ export function UsernameScreen({
           <div className="w-full relative">
             <input 
               type="text" 
-              placeholder="e.g. CosmicStar" 
+              placeholder="e.g. cosmic_star" 
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(e) => setUsername(e.target.value.toLowerCase())}
               className="w-full bg-black/40 border border-white/20 rounded-2xl px-4 py-3.5 text-white font-medium placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all text-center tracking-wide text-base"
               maxLength={15}
               autoFocus
@@ -134,7 +152,17 @@ export function UsernameScreen({
           </button>
         </form>
         
-        <p className="mt-4 text-[11px] text-white/40">Username is required to save your constellation score.</p>
+        {onOpenAuth && (
+          <button
+            type="button"
+            onClick={onOpenAuth}
+            className="mt-4 text-xs text-cyan-300 hover:text-cyan-200 underline font-medium transition-colors"
+          >
+            Already have an account? Sign In
+          </button>
+        )}
+        
+        <p className="mt-3 text-[11px] text-white/40">Username is required to save your constellation score.</p>
       </div>
     </div>
   );
@@ -147,13 +175,15 @@ export function AuthOverlay({
   username,
   coins = 0,
   highestLevel = 1,
-  totalStars = 0
+  totalStars = 0,
+  onUserSync
 }: { 
   onClose: () => void;
   username: string;
   coins?: number;
   highestLevel?: number;
   totalStars?: number;
+  onUserSync?: (data: { username: string; coins?: number; highestLevel?: number }) => void;
 }) {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [mode, setMode] = useState<'menu' | 'email-sign-in' | 'email-sign-up'>('menu');
@@ -163,37 +193,41 @@ export function AuthOverlay({
   const [error, setError] = useState('');
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
+    return onAuthStateChanged(auth, async (u) => {
       setUser(u);
-      if (u) {
-        // Sync profile and progress to both Firestore and Realtime Database
-        const payload = {
-          username,
-          email: u.email,
-          photoURL: u.photoURL,
-          coins,
-          highestLevel,
-          lastSeen: new Date().toISOString()
-        };
-
-        if (rtdb) {
-          try {
-            dbSet(dbRef(rtdb, `users/${u.uid}`), payload).catch(() => undefined);
-          } catch {
-            // ignore
+      if (u && rtdb) {
+        try {
+          const userRef = dbRef(rtdb, `users/${u.uid}`);
+          const snap = await dbGet(userRef);
+          
+          if (snap.exists() && snap.val()?.username) {
+            const userData = snap.val();
+            if (onUserSync) {
+              onUserSync({
+                username: userData.username,
+                coins: userData.coins,
+                highestLevel: userData.highestLevel
+              });
+            }
+          } else if (username) {
+            const payload = {
+              username,
+              email: u.email || '',
+              photoURL: u.photoURL || '',
+              coins,
+              highestLevel,
+              lastSeen: new Date().toISOString()
+            };
+            await dbSet(userRef, payload);
+            const dbKey = toDbKey(username);
+            await dbSet(dbRef(rtdb, `usernames/${dbKey}/ownerUid`), u.uid);
           }
-        }
-
-        if (db) {
-          try {
-            setDoc(doc(db, 'users', u.uid), payload, { merge: true }).catch(() => undefined);
-          } catch {
-            // ignore
-          }
+        } catch (e) {
+          console.warn('Profile sync error:', e);
         }
       }
     });
-  }, [username, coins, highestLevel]);
+  }, [username, coins, highestLevel, onUserSync]);
 
   const handleGoogleSignIn = async () => {
     setLoading(true);

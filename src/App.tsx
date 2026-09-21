@@ -1410,14 +1410,28 @@ function App() {
     setScreen('level-loading');
   };
   const [showAuth, setShowAuth] = useState(false);
+  
   const handleUsernameComplete = (username: string) => {
     updateProgress({ ...progress, username });
     setScreen('start');
   };
 
+  const handleUserSync = (userData: { username: string; coins?: number; highestLevel?: number }) => {
+    const next: SavedProgress = {
+      ...progress,
+      username: userData.username,
+      coins: typeof userData.coins === 'number' ? Math.max(progress.coins, userData.coins) : progress.coins,
+      highestUnlocked: typeof userData.highestLevel === 'number' ? Math.max(progress.highestUnlocked, userData.highestLevel) : progress.highestUnlocked
+    };
+    updateProgress(next);
+    if (screen === 'username') {
+      setScreen('start');
+    }
+  };
+
   const renderScreen = () => {
     if (screen === 'loading') return <LoadingScreen onDone={finishLoading} />;
-    if (screen === 'username') return <UsernameScreen onComplete={handleUsernameComplete} />;
+    if (screen === 'username') return <UsernameScreen onComplete={handleUsernameComplete} onOpenAuth={() => setShowAuth(true)} />;
     if (screen === 'start') return <StartScreen onStart={() => setScreen('home')} />;
     if (screen === 'settings') return <SettingsScreen progress={progress} onChange={updateProgress} onBack={() => setScreen('home')} />;
     if (screen === 'level-loading') return <LevelLoadingScreen level={level} onReady={() => setScreen('game')} />;
@@ -1435,13 +1449,14 @@ function App() {
       )}
       {renderScreen()}
       {showTutorial && <TutorialCarousel onComplete={finishTutorial} />}
-      {showAuth && progress.username && (
+      {showAuth && (
         <AuthOverlay 
           onClose={() => setShowAuth(false)} 
-          username={progress.username} 
+          username={progress.username || ''} 
           coins={progress.coins}
           highestLevel={progress.highestUnlocked}
           totalStars={Object.values(progress.completed).reduce((sum, item) => sum + item.stars, 0)}
+          onUserSync={handleUserSync}
         />
       )}
     </>
