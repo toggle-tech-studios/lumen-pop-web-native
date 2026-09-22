@@ -203,12 +203,7 @@ button:focus-visible { outline: 3px solid #ffe36e; outline-offset: 3px; }
   display: grid;
   place-items: center;
 }
-.stats-row {
-  display: grid;
-  grid-template-columns: 1fr 1.35fr 1fr;
-  gap: 9px;
-  margin-bottom: 14px;
-}
+
 .stat-box {
   padding: 11px 10px;
   border-radius: 15px;
@@ -260,7 +255,7 @@ button:focus-visible { outline: 3px solid #ffe36e; outline-offset: 3px; }
 .booster:nth-child(3) .booster-icon { background:#7cf4e3; }
 .hint { text-align:center; color:rgba(255,255,255,.52); font-size:11px; margin:14px 0 0; }
 .board-wrap.is-linking { border-color:rgba(255,236,125,.75); box-shadow:0 22px 50px rgba(5,0,26,.4), 0 0 28px rgba(81,218,255,.25), inset 0 1px rgba(255,255,255,.24); }
-.chain-count { position:absolute; right:12px; top:-13px; z-index:4; min-width:31px; height:31px; display:grid; place-items:center; border-radius:50%; background:#ffe26f; color:#30136e; font:800 14px var(--font-display); box-shadow:0 0 0 5px rgba(255,226,111,.15), 0 5px 16px rgba(0,0,0,.25); animation: pop .25s ease both; }
+.chain-count { position:absolute; right:12px; top:-13px; z-index:4; width:44px; height:44px; display:flex; flex-direction:column; justify-content:center; align-items:center; border-radius:50%; background:#ffe26f; color:#30136e; font:800 14px var(--font-display); box-shadow:0 0 0 5px rgba(255,226,111,.15), 0 5px 16px rgba(0,0,0,.25); animation: pop .25s ease both; }
 .chain-count small { display:block; margin-top:-3px; font:700 7px var(--app-font-sans); text-transform:uppercase; letter-spacing:.08em; }
 .chain-trail { position:absolute; z-index:3; inset:10px; width:calc(100% - 20px); height:calc(100% - 20px); overflow:visible; pointer-events:none; }
 .trail-node { opacity:.95; animation:trail-node .65s ease-in-out infinite alternate; }
@@ -335,7 +330,6 @@ button:focus-visible { outline: 3px solid #ffe36e; outline-offset: 3px; }
   .board-wrap { padding:8px; }
 }
 @media (max-width: 380px) {
-  .stats-row { gap:6px; }
   .stat-box { padding-left:7px; padding-right:7px; }
   .stat-value { font-size:16px; }
   .stat-label { letter-spacing:.08em; font-size:8px; }
@@ -436,3 +430,11 @@ button:focus-visible { outline: 3px solid #ffe36e; outline-offset: 3px; }
   0% { transform: translateX(-60px); }
   100% { transform: translateX(380px); }
 }
+
+.game-shell[data-high-contrast="true"] .lumen-art {
+  filter: contrast(1.75) saturate(1.5) drop-shadow(0 0 2px rgba(255,255,255,0.3));
+}
+.game-shell[data-high-contrast="true"] .board-wrap {
+  background: rgba(0, 0, 0, 0.45);
+}
+

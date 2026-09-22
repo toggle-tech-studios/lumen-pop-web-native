@@ -21,6 +21,8 @@ import {
   MoveVertical,
   Zap,
   Crosshair,
+  Vibrate,
+  Eye,
 } from 'lucide-react';
 import { UsernameScreen, ProfileDP, AuthOverlay } from './AuthComponents';
 import { auth, rtdb } from './firebase';
@@ -36,6 +38,8 @@ type SavedProgress = {
   coins: number;
   sound: boolean;
   music: boolean;
+  haptics: boolean;
+  highContrast: boolean;
   dailyGiftClaimedOn?: string;
   tutorialSeen?: boolean;
   username?: string;
@@ -69,6 +73,8 @@ const defaultProgress: SavedProgress = {
   coins: 1000,
   sound: true,
   music: true,
+  haptics: true,
+  highContrast: false,
   tutorialSeen: false,
 };
 
@@ -664,13 +670,19 @@ const trailColors: Record<LumenColor, string> = {
 function ChainTrail({ selected, activeType }: { selected: number[]; activeType: LumenColor | null }) {
   if (!selected.length || !activeType) return null;
   const points = selected.map((index) => `${(colOf(index) + 0.5) * (100 / BOARD_SIZE)},${(rowOf(index) + 0.5) * (100 / BOARD_SIZE)}`).join(' ');
-  const last = selected[selected.length - 1];
   return (
     <svg className="chain-trail" viewBox="0 0 100 100" preserveAspectRatio="none" data-length={selected.length} aria-hidden="true">
-      {selected.length > 1 && <polyline points={points} fill="none" stroke={trailColors[activeType]} strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" opacity=".18" />}
-      {selected.length > 1 && <polyline points={points} fill="none" stroke={trailColors[activeType]} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" opacity=".86" />}
-      {selected.map((index) => <circle key={index} className="trail-node" cx={(colOf(index) + 0.5) * (100 / BOARD_SIZE)} cy={(rowOf(index) + 0.5) * (100 / BOARD_SIZE)} r="3.1" fill={trailColors[activeType]} />)}
-      <circle className="touch-pulse" cx={(colOf(last) + 0.5) * (100 / BOARD_SIZE)} cy={(rowOf(last) + 0.5) * (100 / BOARD_SIZE)} r="7" fill="none" stroke={trailColors[activeType]} strokeWidth="1.2" />
+      <defs>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+          <feMerge>
+            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+      {selected.length > 1 && <polyline points={points} fill="none" stroke={trailColors[activeType]} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" filter="url(#glow)" />}
+      {selected.length > 1 && <polyline points={points} fill="none" stroke="#fff" strokeWidth="0.8" strokeLinecap="round" strokeLinejoin="round" opacity=".8" />}
     </svg>
   );
 }
@@ -722,9 +734,14 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
   const starsForScore = (value: number) => value >= config.targetScore ? 3 : value >= config.targetScore * 0.66 ? 2 : value >= config.targetScore * 0.33 ? 1 : 0;
   const stars = starsForScore(score);
   const progressPercent = Math.min(100, (score / config.targetScore) * 100);
-  const play = (kind: SoundKind, intensity = 1) => {
+  const play = useCallback((kind: SoundKind, intensity = 1) => {
     if (progress.sound) soundRef.current?.play(kind, intensity);
-  };
+    if (progress.haptics && 'vibrate' in navigator) {
+      if (kind === 'pop' || kind === 'win') navigator.vibrate(30);
+      else if (kind === 'link') navigator.vibrate(10);
+      else if (kind === 'booster' || kind === 'lose') navigator.vibrate([40, 50, 40]);
+    }
+  }, [progress.sound, progress.haptics]);
   const showToast = useCallback((message: string) => {
     setToast(message);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -1202,7 +1219,7 @@ function GameScreen({ levelNumber, progress, onBack, onSettings, onComplete, onC
   }, []);
 
   return (
-    <div className="screen game-shell">
+    <div className="screen game-shell" data-high-contrast={progress.highContrast}>
       <div className="world-bg" style={{ backgroundImage: `url(${ASSET}${backgrounds[Math.min(backgrounds.length - 1, Math.floor((levelNumber - 1) / 10))]})`, opacity: .28 }} />
       <FloatingClouds />
       <Topbar onBack={onBack} onSettings={onSettings} label={config.world.toUpperCase()} />
@@ -1286,7 +1303,7 @@ function ResultOverlay({ type, score, target, stars, onPrimary, onSecondary, onC
 
 function SettingsScreen({ progress, onChange, onBack }: { progress: SavedProgress; onChange: (next: SavedProgress) => void; onBack: () => void }) {
   const [info, setInfo] = useState<'how' | 'about' | null>(null);
-  return <div className="screen game-shell"><Topbar onBack={onBack} label="YOUR POCKET" /><main className="settings"><p className="eyebrow">A small constellation of controls</p><h1>Settings</h1><p>Make the meadow feel like yours.</p><div className="setting-group"><div className="setting-row"><span className="setting-icon">{progress.sound ? <Volume2 size={17} /> : <VolumeX size={17} />}</span><div className="setting-copy"><b>Sound effects</b><span>Every pop, sparkle, and tiny wake-up</span></div><button className={`switch ${progress.sound ? 'on' : ''}`} onClick={() => onChange({ ...progress, sound: !progress.sound })} aria-label="Toggle sound"><i /></button></div><div className="setting-row"><span className="setting-icon"><Music2 size={17} /></span><div className="setting-copy"><b>Meadow music</b><span>Soft loops for longer journeys</span></div><button className={`switch ${progress.music ? 'on' : ''}`} onClick={() => onChange({ ...progress, music: !progress.music })} aria-label="Toggle music"><i /></button></div></div><div className="setting-group"><button className="setting-row setting-button" onClick={() => setInfo(info === 'how' ? null : 'how')}><span className="setting-icon"><CircleHelp size={17} /></span><span className="setting-copy"><b>How to play</b><span>Link one straight line in any direction</span></span><ChevronRight size={17} className="text-white/50" /></button><button className="setting-row setting-button" onClick={() => setInfo(info === 'about' ? null : 'about')}><span className="setting-icon"><Gem size={17} /></span><span className="setting-copy"><b>About Lumen Pop</b><span>Made for curious thumbs and bright minds</span></span><ChevronRight size={17} className="text-white/50" /></button></div>{info === 'how' && <div className="info-panel"><b>How to play</b><span>Press and drag through 3 or more matching Lumens in a single horizontal, vertical, or diagonal line. Release to pop them, then watch gravity refill the board.</span></div>}{info === 'about' && <div className="info-panel"><b>About Lumen Pop</b><span>A tiny constellation game about waking friendly Lumens, building bright chains, and finding a little wonder in every move.</span></div>}<button className="btn-soft mt-4 flex items-center gap-2" onClick={onBack}><Home size={16} /> Return to meadow</button></main></div>;
+  return <div className="screen game-shell"><Topbar onBack={onBack} label="YOUR POCKET" /><main className="settings"><p className="eyebrow">A small constellation of controls</p><h1>Settings</h1><p>Make the meadow feel like yours.</p><div className="setting-group"><div className="setting-row"><span className="setting-icon">{progress.sound ? <Volume2 size={17} /> : <VolumeX size={17} />}</span><div className="setting-copy"><b>Sound effects</b><span>Every pop, sparkle, and tiny wake-up</span></div><button className={`switch ${progress.sound ? 'on' : ''}`} onClick={() => onChange({ ...progress, sound: !progress.sound })} aria-label="Toggle sound"><i /></button></div><div className="setting-row"><span className="setting-icon"><Music2 size={17} /></span><div className="setting-copy"><b>Meadow music</b><span>Soft loops for longer journeys</span></div><button className={`switch ${progress.music ? 'on' : ''}`} onClick={() => onChange({ ...progress, music: !progress.music })} aria-label="Toggle music"><i /></button></div><div className="setting-row"><span className="setting-icon"><Vibrate size={17} /></span><div className="setting-copy"><b>Haptics</b><span>Feel the pops and bursts</span></div><button className={`switch ${progress.haptics ? 'on' : ''}`} onClick={() => onChange({ ...progress, haptics: !progress.haptics })} aria-label="Toggle haptics"><i /></button></div><div className="setting-row"><span className="setting-icon"><Eye size={17} /></span><div className="setting-copy"><b>High Contrast</b><span>Add patterns for easier reading</span></div><button className={`switch ${progress.highContrast ? 'on' : ''}`} onClick={() => onChange({ ...progress, highContrast: !progress.highContrast })} aria-label="Toggle high contrast"><i /></button></div></div><div className="setting-group"><button className="setting-row setting-button" onClick={() => setInfo(info === 'how' ? null : 'how')}><span className="setting-icon"><CircleHelp size={17} /></span><span className="setting-copy"><b>How to play</b><span>Link one straight line in any direction</span></span><ChevronRight size={17} className="text-white/50" /></button><button className="setting-row setting-button" onClick={() => setInfo(info === 'about' ? null : 'about')}><span className="setting-icon"><Gem size={17} /></span><span className="setting-copy"><b>About Lumen Pop</b><span>Made for curious thumbs and bright minds</span></span><ChevronRight size={17} className="text-white/50" /></button></div>{info === 'how' && <div className="info-panel"><b>How to play</b><span>Press and drag through 3 or more matching Lumens in a single horizontal, vertical, or diagonal line. Release to pop them, then watch gravity refill the board.</span></div>}{info === 'about' && <div className="info-panel"><b>About Lumen Pop</b><span>A tiny constellation game about waking friendly Lumens, building bright chains, and finding a little wonder in every move.</span></div>}<button className="btn-soft mt-4 flex items-center gap-2" onClick={onBack}><Home size={16} /> Return to meadow</button></main></div>;
 }
 
 function TutorialCarousel({ onComplete }: { onComplete: () => void }) {
