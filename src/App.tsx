@@ -24,7 +24,7 @@ import {
   Vibrate,
   Eye,
 } from 'lucide-react';
-import { UsernameScreen, ProfileDP, AuthOverlay, AuthGlobalListener } from './AuthComponents';
+import { AuthScreen, ProfileDP, AuthOverlay, AuthGlobalListener } from './AuthComponents';
 import { auth, rtdb } from './firebase';
 import { ref as dbRef, set as dbSet } from 'firebase/database';
 
@@ -1480,7 +1480,7 @@ function App() {
 
   const renderScreen = () => {
     if (screen === 'loading') return <LoadingScreen onDone={finishLoading} />;
-    if (screen === 'username') return <UsernameScreen onComplete={handleUsernameComplete} onOpenAuth={() => setShowAuth(true)} />;
+    if (screen === 'username') return <AuthScreen onComplete={handleUsernameComplete} />;
     if (screen === 'start') return <StartScreen onStart={() => setScreen('home')} />;
     if (screen === 'settings') return <SettingsScreen progress={progress} onChange={updateProgress} onBack={() => setScreen('home')} />;
     if (screen === 'level-loading') return <LevelLoadingScreen level={level} onReady={() => setScreen('game')} />;
