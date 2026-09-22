@@ -51,9 +51,8 @@ export function UsernameScreen({ onComplete, onOpenAuth }: { onComplete: (userna
       setError('Password must be at least 8 characters');
       return;
     }
-    // For new signups, if they don't want capital letters we can guide them, but allow existing passwords like TEST@123
-    if (!isReturning && /[A-Z]/.test(password)) {
-      setError('New passwords must not contain capital letters');
+    if (/[A-Z]/.test(password)) {
+      setError('Password must only be in small letters');
       return;
     }
     
@@ -156,9 +155,9 @@ export function UsernameScreen({ onComplete, onOpenAuth }: { onComplete: (userna
           />
           <input 
             type="password" 
-            placeholder={isReturning ? "Password" : "Password (min 8 chars, no capitals)"} 
+            placeholder={isReturning ? "Password (e.g. test@123)" : "Password (min 8 chars, small letters only)"} 
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => setPassword(e.target.value.toLowerCase())}
             className="w-full bg-black/40 border border-white/20 rounded-2xl px-4 py-3.5 text-white font-medium placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all text-center tracking-wide text-sm"
             minLength={8}
             required
