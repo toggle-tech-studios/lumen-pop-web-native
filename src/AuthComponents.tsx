@@ -39,12 +39,25 @@ export function AuthScreen({ onComplete }: { onComplete: (username: string) => v
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Process redirect result first to prevent bouncing
-    getRedirectResult(auth).catch(err => {
-      if(err.code !== 'auth/missing-initial-state') {
-        console.error('Redirect error:', err);
-      }
-    });
+    let redirectFinished = false;
+
+    // Await redirect result before showing login buttons
+    getRedirectResult(auth)
+      .then((res) => {
+        redirectFinished = true;
+        if (!res && !auth.currentUser) {
+          setLoading(false);
+        }
+      })
+      .catch(err => {
+        redirectFinished = true;
+        if(err.code !== 'auth/missing-initial-state') {
+          setError(err.message?.replace('Firebase: ', '') || 'Google sign-in failed');
+        }
+        if (!auth.currentUser) {
+          setLoading(false);
+        }
+      });
 
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       if (u) {
@@ -52,7 +65,7 @@ export function AuthScreen({ onComplete }: { onComplete: (username: string) => v
           try {
             const snap = await withTimeout(dbGet(dbRef(rtdb, `users/${u.uid}`)), 3000);
             if (snap && snap.exists() && snap.val()?.username) {
-              // They have a profile, AuthGlobalListener will handle the sync, but we should also just proceed
+              // Profile exists
               onComplete(snap.val().username);
             } else {
               setStep('username');
@@ -65,7 +78,10 @@ export function AuthScreen({ onComplete }: { onComplete: (username: string) => v
           }
         }
       } else {
-        setLoading(false);
+        // If not logged in, only drop the loading screen if we are done checking redirect
+        if (redirectFinished) {
+          setLoading(false);
+        }
       }
     });
     return unsubscribe;
@@ -268,13 +284,6 @@ export function AuthOverlay({
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Process redirect result first
-    getRedirectResult(auth).catch(err => {
-      if(err.code !== 'auth/missing-initial-state') {
-        setError(err.message || 'Redirect error');
-      }
-    });
-
     return onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u && rtdb) {
@@ -557,13 +566,6 @@ export function ProfileDP({ onClick, username }: { onClick: () => void; username
 
 export function AuthGlobalListener({ onUserSync }: { onUserSync: (data: any) => void }) {
   useEffect(() => {
-    // Process redirect result
-    getRedirectResult(auth).catch(err => {
-      if(err.code !== 'auth/missing-initial-state') {
-        console.error('Redirect error:', err);
-      }
-    });
-
     return onAuthStateChanged(auth, async (u) => {
       if (u && rtdb) {
         try {
