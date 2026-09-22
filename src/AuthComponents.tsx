@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { ref as dbRef, get as dbGet, set as dbSet } from 'firebase/database';
 import { 
-  signInWithPopup, 
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
   signOut,
@@ -200,13 +202,20 @@ export function AuthOverlay({
   onUserSync?: (data: { username: string; coins?: number; highestLevel?: number, completed?: Record<number, { stars: number; bestScore: number }> }) => void;
 }) {
   const [user, setUser] = useState<User | null>(auth.currentUser);
-  const [mode, setMode] = useState<'email-sign-in' | 'email-sign-up'>('email-sign-in');
+  const [mode, setMode] = useState<'menu' | 'email-sign-in' | 'email-sign-up'>('menu');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // Process redirect result first
+    getRedirectResult(auth).catch(err => {
+      if(err.code !== 'auth/missing-initial-state') {
+        setError(err.message || 'Redirect error');
+      }
+    });
+
     return onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u && rtdb) {
@@ -245,6 +254,19 @@ export function AuthOverlay({
     });
   }, [username, coins, highestLevel, completed, onUserSync]);
 
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await signInWithRedirect(auth, googleProvider);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message?.replace('Firebase: ', '') || 'Google sign-in failed');
+      setLoading(false);
+    }
+  };
+
+  
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -260,7 +282,7 @@ export function AuthOverlay({
       console.error(err);
       const msg = err.message || 'Authentication failed';
       if (msg.includes('auth/invalid-credential')) {
-        setError('Invalid email or password. Please try again.');
+        setError('Invalid email or password. If you are new, please Sign Up.');
       } else if (msg.includes('auth/email-already-in-use')) {
         setError('Email is already registered. Please Sign In.');
       } else {
@@ -363,36 +385,77 @@ export function AuthOverlay({
           </p>
         )}
 
-        <form onSubmit={handleEmailAuth} className="flex flex-col gap-3">
-          <input 
-            type="email" 
-            placeholder="Email address" 
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full bg-black/40 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-cyan-300 text-sm"
-            required
-          />
-          <input 
-            type="password" 
-            placeholder="Password" 
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full bg-black/40 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-cyan-300 text-sm"
-            required
-            minLength={6}
-          />
-          <button type="submit" disabled={loading} className="btn-primary w-full mt-1 py-3 text-sm font-bold">
-            {loading ? 'Please wait...' : mode === 'email-sign-up' ? 'Create Account' : 'Sign In'}
-          </button>
-          
-          <button 
-            type="button" 
-            onClick={() => setMode(mode === 'email-sign-up' ? 'email-sign-in' : 'email-sign-up')} 
-            className="text-xs text-cyan-300 mt-1 hover:underline text-center"
-          >
-            {mode === 'email-sign-up' ? 'Already have an account? Sign In' : "Need an account? Sign Up"}
-          </button>
-        </form>
+        {mode === 'menu' ? (
+          <div className="flex flex-col gap-3">
+            <button 
+              onClick={handleGoogleSignIn} 
+              disabled={loading}
+              className="btn-soft w-full flex items-center justify-center gap-3 bg-white text-gray-900 hover:bg-gray-100 font-bold py-3 shadow-md"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+                <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+              </svg>
+              {loading ? 'Connecting...' : 'Continue with Google'}
+            </button>
+
+            
+
+            <div className="flex items-center gap-3 my-1 opacity-40">
+              <div className="h-px bg-white flex-1" />
+              <span className="text-[10px] font-bold uppercase tracking-widest">OR</span>
+              <div className="h-px bg-white flex-1" />
+            </div>
+
+            <button 
+              onClick={() => setMode('email-sign-in')} 
+              className="btn-soft w-full flex items-center justify-center gap-2 py-3 text-sm font-semibold"
+            >
+              <Mail size={16} /> Continue with Email
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleEmailAuth} className="flex flex-col gap-3">
+            <input 
+              type="email" 
+              placeholder="Email address" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-black/40 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-cyan-300 text-sm"
+              required
+            />
+            <input 
+              type="password" 
+              placeholder="Password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-black/40 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-cyan-300 text-sm"
+              required
+              minLength={6}
+            />
+            <button type="submit" disabled={loading} className="btn-primary w-full mt-1 py-3 text-sm font-bold">
+              {loading ? 'Please wait...' : mode === 'email-sign-up' ? 'Create Account' : 'Sign In'}
+            </button>
+            
+            <button 
+              type="button" 
+              onClick={() => setMode(mode === 'email-sign-up' ? 'email-sign-in' : 'email-sign-up')} 
+              className="text-xs text-cyan-300 mt-1 hover:underline text-center"
+            >
+              {mode === 'email-sign-up' ? 'Already have an account? Sign In' : "Need an account? Sign Up"}
+            </button>
+            
+            <button 
+              type="button" 
+              onClick={() => setMode('menu')} 
+              className="text-xs text-white/50 mt-2 hover:text-white flex items-center justify-center gap-1.5"
+            >
+              ← Back to options
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
