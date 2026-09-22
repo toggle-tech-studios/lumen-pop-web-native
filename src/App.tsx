@@ -24,7 +24,7 @@ import {
   Vibrate,
   Eye,
 } from 'lucide-react';
-import { UsernameScreen, ProfileDP, AuthOverlay } from './AuthComponents';
+import { UsernameScreen, ProfileDP, AuthOverlay, AuthGlobalListener } from './AuthComponents';
 import { auth, rtdb } from './firebase';
 import { ref as dbRef, set as dbSet } from 'firebase/database';
 
@@ -1492,6 +1492,7 @@ function App() {
   
   return (
     <>
+      <AuthGlobalListener onUserSync={handleUserSync} />
       <MusicLayer screen={screen} enabled={progress.music} />
       {showProfile && progress.username && (
         <ProfileDP onClick={() => setShowAuth(true)} username={progress.username} />

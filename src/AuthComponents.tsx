@@ -29,14 +29,10 @@ function withTimeout<T>(promise: Promise<T>, ms = 3000): Promise<T | null> {
 
 // --- UsernameScreen ---
 
-export function UsernameScreen({ 
-  onComplete,
-  onOpenAuth
-}: { 
-  onComplete: (username: string) => void;
-  onOpenAuth?: () => void;
-}) {
+export function UsernameScreen({ onComplete, onOpenAuth }: { onComplete: (username: string) => void, onOpenAuth?: () => void }) {
   const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [isReturning, setIsReturning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -51,82 +47,67 @@ export function UsernameScreen({
       setError('Only lowercase letters, numbers, and - _ . allowed');
       return;
     }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+    if (/[A-Z]/.test(password)) {
+      setError('Password must not contain capital letters');
+      return;
+    }
     
     setLoading(true);
     setError('');
     
-    const dbKey = toDbKey(clean);
-    let isTaken = false;
+    const dummyEmail = `${clean}@lumenpop.local`;
 
-    // 1. Check in Realtime Database
-    if (rtdb) {
-      try {
-        const snapshot = await withTimeout(dbGet(dbRef(rtdb, `usernames/${dbKey}`)), 3000);
-        if (snapshot === null) {
-          setError('Network timeout. Please try again.');
-          setLoading(false);
-          return;
-        }
-        if (snapshot.exists()) {
-          const val = snapshot.val();
-          if (!auth.currentUser || val.ownerUid !== auth.currentUser.uid) {
-            isTaken = true;
+    try {
+      if (isReturning) {
+        // Log in
+        await signInWithEmailAndPassword(auth, dummyEmail, password);
+        onComplete(clean);
+      } else {
+        // Sign up
+        const dbKey = toDbKey(clean);
+        
+        // Check if taken in RTDB first
+        if (rtdb) {
+          const snapshot = await withTimeout(dbGet(dbRef(rtdb, `usernames/${dbKey}`)), 3000);
+          if (snapshot && snapshot.exists()) {
+            setError('Username is already taken. Try another or log in.');
+            setLoading(false);
+            return;
           }
         }
-      } catch (rtdbErr) {
-        console.warn('RTDB check note:', rtdbErr);
-        setError('Network error. Please try again.');
-        setLoading(false);
-        return;
-      }
-    }
 
-    // 2. Check in Cloud Firestore (fallback if enabled)
-    if (!isTaken && db) {
-      try {
-        const snap = await withTimeout(getDoc(doc(db, 'usernames', dbKey)), 2000);
-        if (snap && snap.exists()) {
-          isTaken = true;
+        // Create auth user
+        const cred = await createUserWithEmailAndPassword(auth, dummyEmail, password);
+        
+        // Reserve username
+        const payload = {
+          username: clean,
+          ownerUid: cred.user.uid,
+          createdAt: new Date().toISOString()
+        };
+        
+        if (rtdb) {
+          await dbSet(dbRef(rtdb, `usernames/${dbKey}`), payload);
+          await dbSet(dbRef(rtdb, `users/${cred.user.uid}/username`), clean);
         }
-      } catch (fsErr) {
-        // Firestore may not be initialized in console
+        
+        onComplete(clean);
       }
-    }
-
-    if (isTaken) {
-      setError('Username is already taken. Try another!');
+    } catch (err: any) {
+      console.error(err);
+      if (err.message?.includes('auth/invalid-credential')) {
+         setError('Invalid username or password.');
+      } else if (err.message?.includes('auth/email-already-in-use')) {
+         setError('Username is already registered. Please switch to Returning Player.');
+      } else {
+         setError(err.message?.replace('Firebase: ', '') || 'Authentication failed');
+      }
       setLoading(false);
-      return;
     }
-
-    // Reserve username in Realtime Database and wait for confirmation
-    const payload = {
-      username: clean,
-      ownerUid: auth.currentUser?.uid || null,
-      createdAt: new Date().toISOString()
-    };
-
-    if (rtdb) {
-      try {
-        const setRes = await withTimeout(dbSet(dbRef(rtdb, `usernames/${dbKey}`), payload), 3000);
-        if (setRes === null) throw new Error('Timeout');
-        if (auth.currentUser) {
-          await withTimeout(dbSet(dbRef(rtdb, `users/${auth.currentUser.uid}/username`), clean), 3000);
-        }
-      } catch (err) {
-        console.warn('Failed to save to RTDB:', err);
-        setError('Could not save username. Please try again.');
-        setLoading(false);
-        return;
-      }
-    }
-
-    if (db) {
-      withTimeout(setDoc(doc(db, 'usernames', dbKey), payload, { merge: true }), 2000).catch(() => undefined);
-    }
-
-    setLoading(false);
-    onComplete(clean);
   };
 
   return (
@@ -140,43 +121,57 @@ export function UsernameScreen({
         </div>
         
         <span className="eyebrow text-cyan-200 uppercase tracking-widest text-[11px]">Welcome Adventurer</span>
-        <h1 className="display text-3xl font-extrabold text-white mt-1 mb-2">Claim Your Name</h1>
-        <p className="text-white/65 text-xs mb-6 max-w-xs">Pick a unique stargazer username before entering the glowing meadows.</p>
+        <h1 className="display text-3xl font-extrabold text-white mt-1 mb-2">{isReturning ? 'Welcome Back' : 'Claim Your Name'}</h1>
+        <p className="text-white/65 text-xs mb-6 max-w-xs">{isReturning ? 'Enter your credentials to continue.' : 'Pick a unique stargazer username and password.'}</p>
         
-        <form onSubmit={handleSubmit} className="w-full flex flex-col items-center">
-          <div className="w-full relative">
-            <input 
-              type="text" 
-              placeholder="e.g. cosmic_star" 
-              value={username}
-              onChange={(e) => setUsername(e.target.value.toLowerCase())}
-              className="w-full bg-black/40 border border-white/20 rounded-2xl px-4 py-3.5 text-white font-medium placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all text-center tracking-wide text-base"
-              maxLength={15}
-              autoFocus
-            />
-          </div>
-          {error && <p className="text-pink-300 text-xs mt-2.5 px-2 py-1 rounded bg-pink-900/30 border border-pink-500/20">{error}</p>}
+        <form onSubmit={handleSubmit} className="w-full flex flex-col items-center gap-3">
+          <input 
+            type="text" 
+            placeholder="Username (e.g. cosmic_star)" 
+            value={username}
+            onChange={(e) => setUsername(e.target.value.toLowerCase())}
+            className="w-full bg-black/40 border border-white/20 rounded-2xl px-4 py-3.5 text-white font-medium placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all text-center tracking-wide text-sm"
+            maxLength={15}
+            required
+            autoFocus
+          />
+          <input 
+            type="password" 
+            placeholder="Password (min 8 chars, no capitals)" 
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full bg-black/40 border border-white/20 rounded-2xl px-4 py-3.5 text-white font-medium placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all text-center tracking-wide text-sm"
+            minLength={8}
+            required
+          />
+          {error && <p className="text-pink-300 text-xs mt-1 px-2 py-1 rounded bg-pink-900/30 border border-pink-500/20">{error}</p>}
           
           <button 
             type="submit" 
             disabled={loading}
-            className="btn-primary flex items-center justify-center gap-2 w-full mt-5 py-3 text-sm font-bold shadow-[0_0_20px_rgba(255,187,66,0.3)]"
+            className="btn-primary flex items-center justify-center gap-2 w-full mt-2 py-3 text-sm font-bold shadow-[0_0_20px_rgba(255,187,66,0.3)]"
           >
-            {loading ? 'Checking availability...' : 'Start Playing'} <ChevronRight size={18} />
+            {loading ? 'Processing...' : isReturning ? 'Log In' : 'Start Playing'} <ChevronRight size={18} />
           </button>
         </form>
+
+        <button
+          type="button"
+          onClick={() => { setIsReturning(!isReturning); setError(''); }}
+          className="mt-4 text-xs text-cyan-300 hover:text-cyan-200 underline font-medium transition-colors"
+        >
+          {isReturning ? 'Need a new username? Create one' : 'Already claimed a username? Log in'}
+        </button>
         
         {onOpenAuth && (
           <button
             type="button"
             onClick={onOpenAuth}
-            className="mt-4 text-xs text-cyan-300 hover:text-cyan-200 underline font-medium transition-colors"
+            className="mt-4 text-xs text-white/50 hover:text-white transition-colors flex items-center gap-1.5"
           >
-            Already have an account? Sign In
+            Or log in with Google / Email <ChevronRight size={12} />
           </button>
         )}
-        
-        <p className="mt-3 text-[11px] text-white/40">Username is required to save your constellation score.</p>
       </div>
     </div>
   );
@@ -494,4 +489,38 @@ export function ProfileDP({ onClick, username }: { onClick: () => void; username
       </div>
     </button>
   );
+}
+
+export function AuthGlobalListener({ onUserSync }: { onUserSync: (data: any) => void }) {
+  useEffect(() => {
+    // Process redirect result
+    getRedirectResult(auth).catch(err => {
+      if(err.code !== 'auth/missing-initial-state') {
+        console.error('Redirect error:', err);
+      }
+    });
+
+    return onAuthStateChanged(auth, async (u) => {
+      if (u && rtdb) {
+        try {
+          const userRef = dbRef(rtdb, `users/${u.uid}`);
+          const snap = await dbGet(userRef);
+          
+          if (snap.exists() && snap.val()?.username) {
+            const userData = snap.val();
+            onUserSync({
+              username: userData.username,
+              coins: userData.coins,
+              highestLevel: userData.highestLevel,
+              completed: userData.completed
+            });
+          }
+        } catch (e) {
+          console.warn('Profile sync error:', e);
+        }
+      }
+    });
+  }, [onUserSync]);
+
+  return null;
 }
