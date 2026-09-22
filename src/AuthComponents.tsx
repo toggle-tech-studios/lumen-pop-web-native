@@ -90,10 +90,23 @@ export function AuthScreen({ onComplete }: { onComplete: (username: string) => v
   const handleGoogleSignIn = async () => {
     setLoading(true); setError('');
     try {
-      await signInWithRedirect(auth, googleProvider);
+      await signInWithPopup(auth, googleProvider);
+      // Popup resolves immediately if successful, state observer handles it.
     } catch (err: any) {
-      setError(err.message?.replace('Firebase: ', '') || 'Google sign-in failed');
-      setLoading(false);
+      if (err.code === 'auth/operation-not-supported-in-this-environment' || err.code === 'auth/popup-blocked') {
+        // Fallback for Capacitor or strict browsers
+        try {
+          await signInWithRedirect(auth, googleProvider);
+        } catch (redirectErr: any) {
+          setError(redirectErr.message?.replace('Firebase: ', '') || 'Google sign-in failed');
+          setLoading(false);
+        }
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setLoading(false);
+      } else {
+        setError(err.message?.replace('Firebase: ', '') || 'Google sign-in failed');
+        setLoading(false);
+      }
     }
   };
 
@@ -326,11 +339,22 @@ export function AuthOverlay({
     setLoading(true);
     setError('');
     try {
-      await signInWithRedirect(auth, googleProvider);
+      await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
       console.error(err);
-      setError(err.message?.replace('Firebase: ', '') || 'Google sign-in failed');
-      setLoading(false);
+      if (err.code === 'auth/operation-not-supported-in-this-environment' || err.code === 'auth/popup-blocked') {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+        } catch (redirectErr: any) {
+          setError(redirectErr.message?.replace('Firebase: ', '') || 'Google sign-in failed');
+          setLoading(false);
+        }
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setLoading(false);
+      } else {
+        setError(err.message?.replace('Firebase: ', '') || 'Google sign-in failed');
+        setLoading(false);
+      }
     }
   };
 
