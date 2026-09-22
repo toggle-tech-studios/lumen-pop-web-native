@@ -51,8 +51,9 @@ export function UsernameScreen({ onComplete, onOpenAuth }: { onComplete: (userna
       setError('Password must be at least 8 characters');
       return;
     }
-    if (/[A-Z]/.test(password)) {
-      setError('Password must not contain capital letters');
+    // For new signups, if they don't want capital letters we can guide them, but allow existing passwords like TEST@123
+    if (!isReturning && /[A-Z]/.test(password)) {
+      setError('New passwords must not contain capital letters');
       return;
     }
     
@@ -63,8 +64,26 @@ export function UsernameScreen({ onComplete, onOpenAuth }: { onComplete: (userna
 
     try {
       if (isReturning) {
-        // Log in
-        await signInWithEmailAndPassword(auth, dummyEmail, password);
+        // Log in: try with entered password first, fallback to lowercase/uppercase if needed
+        try {
+          await signInWithEmailAndPassword(auth, dummyEmail, password);
+        } catch (err1: any) {
+          if (password !== password.toLowerCase()) {
+            try {
+              await signInWithEmailAndPassword(auth, dummyEmail, password.toLowerCase());
+            } catch {
+              throw err1;
+            }
+          } else if (password !== password.toUpperCase()) {
+            try {
+              await signInWithEmailAndPassword(auth, dummyEmail, password.toUpperCase());
+            } catch {
+              throw err1;
+            }
+          } else {
+            throw err1;
+          }
+        }
         onComplete(clean);
       } else {
         // Sign up
@@ -137,7 +156,7 @@ export function UsernameScreen({ onComplete, onOpenAuth }: { onComplete: (userna
           />
           <input 
             type="password" 
-            placeholder="Password (min 8 chars, no capitals)" 
+            placeholder={isReturning ? "Password" : "Password (min 8 chars, no capitals)"} 
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full bg-black/40 border border-white/20 rounded-2xl px-4 py-3.5 text-white font-medium placeholder-white/30 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all text-center tracking-wide text-sm"
